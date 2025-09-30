@@ -261,7 +261,7 @@ end
     typesB = []
     push!(typesA, PauliBasis{N})
     # push!(typesA, Pauli{N})
-    # push!(typesA, PauliSum{N, ComplexF64})
+    push!(typesA, PauliSum{N, ComplexF64})
     push!(typesB, Ket{N})
     # push!(typesB, DyadBasis{N})
     # push!(typesB, Dyad{N})

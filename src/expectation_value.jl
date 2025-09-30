@@ -67,3 +67,11 @@ function matrix_element(b::Bra{N}, p::PauliBasis{N}, k::Ket{N}) where N
         return 0
     end 
 end
+
+function matrix_element(b::Bra{N}, p::PauliSum{N,T}, k::Ket{N}) where {N,T}
+    eval = zero(T)
+    for (pi,ci) in p
+        eval += matrix_element(b, pi, k) * ci
+    end
+    return eval 
+end

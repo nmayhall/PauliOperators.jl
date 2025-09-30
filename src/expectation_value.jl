@@ -56,3 +56,14 @@ function expectation_value(p::PauliSum{N,T}, d::DyadSum{N,T}) where {N,T}
     end
     return eval 
 end
+
+function matrix_element(b::Bra{N}, p::PauliBasis{N}, k::Ket{N}) where N
+    # <b| ZZZ...*XXX...|k> (1im)^sp
+    sgn = count_ones(p.z & b.v)  # sgn <j| = <j| z 
+    val = k.v ⊻ b.v == p.x # <j|x|i>
+    if val
+        return (-1)^sgn * 1im^symplectic_phase(p)
+    else
+        return 0
+    end 
+end

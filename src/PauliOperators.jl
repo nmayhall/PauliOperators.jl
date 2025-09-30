@@ -34,6 +34,7 @@ module PauliOperators
     export ⊗
     export ⊕
     export expectation_value
+    export matrix_element 
 
     export symplectic_phase
     export coeff

@@ -3,6 +3,7 @@ using Test
 using Printf
 using LinearAlgebra
 using Random
+using BenchmarkTools
 
 
 @testset "operator_methods" begin
@@ -251,4 +252,57 @@ end
             end
         end
     end
+end
+
+
+@testset "expectation_value" begin
+    N = 3
+    typesA = []
+    typesB = []
+    push!(typesA, PauliBasis{N})
+    # push!(typesA, Pauli{N})
+    # push!(typesA, PauliSum{N, ComplexF64})
+    push!(typesB, Ket{N})
+    # push!(typesB, DyadBasis{N})
+    # push!(typesB, Dyad{N})
+    # push!(typesB, DyadSum{N, ComplexF64})
+    for TA in typesA
+        for TB in typesB
+            for i in 1:100
+                # Now scalar multiplication
+                
+                a = rand(TA)
+                b = rand(TB)
+                c = rand(TB)
+                
+                val = matrix_element(b', a, c)
+
+                ref = tr(Vector(b)' * Matrix(a) * Vector(c))
+                err = abs(val-ref) < 1e-14
+                if !err
+                    println(TA)
+                    println(TB)
+                    println(TC)
+                    display(a)
+                    display(b)
+                    display(c)
+                    println("val: ", val)
+                    println("ref: ", ref)
+                    display(abs(val-ref))
+                    @show a b c err
+                end
+                @test err
+            end
+        end
+    end
+    a = rand(Ket{N})
+    b = rand(PauliBasis{N})
+    c = rand(Ket{N})
+    function tmp(N, a, b, c)
+        v = matrix_element(a', b, c)
+    end
+    # @btime $tmp(100, $a, $b, $c)
+    mem = @allocated tmp(100, a, b, c)
+    mem = @allocated tmp(100, a, b, c)
+    @test mem == 0 
 end

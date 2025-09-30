@@ -18,11 +18,12 @@ function expectation_value(p::Union{PauliBasis{N}, Pauli{N}}, d::Union{Dyad{N}, 
     if sgn % 2 != 0
         sgn1 = -1
     end
-    if symplectic_phase(p) == 1
+    sp = symplectic_phase(p)
+    if sp == 1
         phs1 = 1im
-    elseif symplectic_phase(p) == 2
+    elseif sp == 2
         phs1 = -1
-    elseif symplectic_phase(p) == 3
+    elseif sp == 3
         phs1 = -1im
     end
 

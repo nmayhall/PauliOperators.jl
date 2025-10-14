@@ -1,7 +1,14 @@
 
+KetSum{N, T} = Dict{Ket{N}, T}
+
+KetSum(N::Integer, T::Type) = Dict{Ket{N}, T}()
+function KetSum(N; T=Float64)
+    return Dict{Ket{N}, T}()
+end
+    
+
 Base.adjoint(d::KetSum{N,T}) where {N,T} = Adjoint(d)
 Base.parent(d::Adjoint{<:Any, <:KetSum}) = d.parent
-
 
 """
     Base.show(io::IO, v::KetSum{N,T}) where {N,T}
@@ -76,6 +83,24 @@ function otimes(p1::KetSum{N,T}, p2::KetSum{M,T}) where {N,M,T}
         for (op2,coeff2) in p2
             out[op1 ⊗ op2] = coeff1 * coeff2 
         end
+    end
+    return out 
+end
+
+
+function Base.rand(::Type{KetSum{N, T}}; n_terms=2) where {N,T}
+    out = KetSum(N, T)
+    for i in 1:n_terms
+        p = rand(Ket{N})
+        out[p] = coeff(p) * rand(T)
+    end
+    return out 
+end
+function Base.rand(::Type{KetSum{N}}; n_terms=2, T=ComplexF64) where {N}
+    out = KetSum(N, T)
+    for i in 1:n_terms
+        p = rand(Ket{N})
+        out[p] = coeff(p) * rand(T)
     end
     return out 
 end

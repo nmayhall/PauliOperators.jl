@@ -20,6 +20,7 @@ module PauliOperators
 
     const ⊗ = otimes
     const ⊕ = osum
+    const PHASE_TBL = SVector{4}([1, 1im, -1, -1im])
 
     export Pauli
     export PauliBasis

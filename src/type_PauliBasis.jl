@@ -15,6 +15,9 @@ Phase definitions:
 struct PauliBasis{N} 
     z::Int128
     x::Int128
+    
+    # Add an inner constructor that validates N is a value type
+    PauliBasis{N}(z::Int128, x::Int128) where {N} = new{N}(z, x)
 end
 
 LinearAlgebra.ishermitian(p::PauliBasis) = true
@@ -107,9 +110,14 @@ function Base.string(p::PauliBasis{N}) where N
     return join(out[1:N])
 end
 
+# function Base.rand(T::Type{PauliBasis{N}}) where N
+#     return PauliBasis{N}(rand(0:Int128(2)^N-1), rand(0:Int128(2)^N-1))
+# end
 function Base.rand(T::Type{PauliBasis{N}}) where N
-    return PauliBasis{N}(rand(0:Int128(2)^N-1), rand(0:Int128(2)^N-1))
+    max_val = Int128(2)^N - Int128(1)
+    return PauliBasis{N}(rand(Int128) & max_val, rand(Int128) & max_val)
 end
+
 
 Base.display(p::PauliBasis) = println(string(p))
 

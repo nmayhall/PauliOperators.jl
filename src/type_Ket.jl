@@ -9,8 +9,6 @@ struct Bra{N}
     v::Int128
 end
 
-KetSum{N, T} = Dict{Ket{N}, T}
-
 """
     Ket(vec::Vector{T}) where T<:Union{Bool, Integer}
 
@@ -58,10 +56,6 @@ function Bra(N::Integer, v::Integer)
 end
 
 
-function KetSum(N; T=Float64)
-    return Dict{Ket{N}, T}()
-end
-    
 function Base.size(d::Ket{N}) where N
     return (BigInt(2)^N, 1)
 end
@@ -74,8 +68,13 @@ Base.adjoint(d::Ket{N}) where N = Bra{N}(d.v)
 Base.adjoint(d::Bra{N}) where N = Ket{N}(d.v)
 
 
-Base.rand(T::Type{Ket{N}}) where N = T(rand(0:Int128(2)^N-1))
-Base.rand(T::Type{Bra{N}}) where N = T(rand(0:Int128(2)^N-1))
+# Base.rand(T::Type{Ket{N}}) where N = T(rand(0:Int128(2)^N-1))
+# Base.rand(T::Type{Bra{N}}) where N = T(rand(0:Int128(2)^N-1))
+Base.rand(T::Type{Ket{N}}) where N = T(rand(Int128) & (Int128(2)^N - Int128(1)))
+Base.rand(T::Type{Bra{N}}) where N = T(rand(Int128) & (Int128(2)^N - Int128(1)))
+
+
+@inline coeff(d::Ket) = 1 
 
 
 
@@ -144,6 +143,11 @@ Create dense vector representation in standard basis
 function Base.Vector(k::Union{Ket{N}, Bra{N}}; T=Int64) where N
     vec = zeros(T,Int128(2)^N)
     vec[index(k)] = T(1) 
+    return vec 
+end
+function Base.Matrix(k::Union{Ket{N}, Bra{N}}; T=Int64) where N
+    vec = zeros(T,Int128(2)^N,1)
+    vec[index(k),1] = T(1) 
     return vec 
 end
 

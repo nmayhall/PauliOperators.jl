@@ -194,9 +194,14 @@ end
 
 TBW
 """
+# function Base.rand(T::Type{Pauli{N}}) where N
+#     return Pauli{N}(randn(ComplexF64), rand(0:Int128(2)^N-1), rand(0:Int128(2)^N-1))
+# end
 function Base.rand(T::Type{Pauli{N}}) where N
-    return Pauli{N}(randn(ComplexF64), rand(0:Int128(2)^N-1), rand(0:Int128(2)^N-1))
+    max_val = Int128(2)^N - Int128(1)
+    return Pauli{N}(randn(ComplexF64), rand(Int128) & max_val, rand(Int128) & max_val)
 end
+
 
 function nY(p::Pauli)
     return count_ones(p.x & p.z)

@@ -15,25 +15,28 @@ Base.:*(k::Bra{N}, b::Ket{N}) where N = k.v == b.v ? 1 : 0
 function Base.:*(b::Bra{N}, p::Pauli{N}) where N
     new_bra = Bra{N}(b.v ⊻ p.x)
     sign = count_ones(p.z & b.v)%2
-    return sign == 0 ? p.s : -p.s, new_bra
+    # return sign == 0 ? p.s : -p.s, new_bra
+    return PHASE_TBL[(2*sign)%4 + 1]*p.s, new_bra
 end
 
 function Base.:*(b::Bra{N}, p::PauliBasis{N}) where N
     new_bra = Bra{N}(b.v ⊻ p.x)
     sign = count_ones(b.v & p.z)%2
-    return sign == 0 ? 1im^symplectic_phase(p) : -1im^symplectic_phase(p), new_bra
+    return PHASE_TBL[(symplectic_phase(p) + 2*sign)%4 + 1], new_bra
+    # return sign == 0 ? 1im^symplectic_phase(p) : -1im^symplectic_phase(p), new_bra
 end
 
 function Base.:*(p::Pauli{N}, k::Ket{N}) where N
     new_ket = Ket{N}(p.x ⊻ k.v)
     sign = count_ones(p.z & new_ket.v)%2
-    return sign == 0 ? p.s : -p.s, new_ket
+    return PHASE_TBL[(2*sign)%4 + 1]*p.s, new_ket
 end
 
 function Base.:*(p::PauliBasis{N}, k::Ket{N}) where N
     new_ket = Ket{N}(p.x ⊻ k.v)
     sign = count_ones(p.z & new_ket.v)%2
-    return sign == 0 ? 1im^symplectic_phase(p) : -1im^symplectic_phase(p), new_ket
+    # return sign == 0 ? 1im^symplectic_phase(p) : -1im^symplectic_phase(p), new_ket
+    return PHASE_TBL[(symplectic_phase(p) + 2*sign)%4 + 1], new_ket
 end
 
 function Base.:*(p::Union{Pauli{N}, PauliBasis{N}}, d::Union{Dyad{N}, DyadBasis{N}}) where N

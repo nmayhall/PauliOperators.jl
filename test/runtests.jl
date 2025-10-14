@@ -7,4 +7,5 @@ using Test
     include("test_Ket.jl")
     include("test_multiplication.jl")
     include("test_addition.jl")
+    include("test_allocations.jl")
 end

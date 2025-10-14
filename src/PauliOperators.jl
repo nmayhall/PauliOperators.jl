@@ -2,7 +2,7 @@ module PauliOperators
 
     using Printf
     using LinearAlgebra
-   
+    using StaticArrays
 
     include("helpers.jl")
     include("type_PauliBasis.jl")

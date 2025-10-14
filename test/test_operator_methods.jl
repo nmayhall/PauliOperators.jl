@@ -302,7 +302,8 @@ end
         v = matrix_element(a', b, c)
     end
     # @btime $tmp(100, $a, $b, $c)
-    mem = @allocated tmp(100, a, b, c)
-    mem = @allocated tmp(100, a, b, c)
+    del = tmp(100, a, b, c)
+    # mem = @ballocated $tmp(100, a, b, c)
+    mem = @ballocated $tmp(100, $a, $b, $c)
     @test mem == 0 
 end

@@ -183,4 +183,5 @@ end
     a = rand(KetSum{N}, n_terms=50)
     @test norm(Vector(a*3.4) - 3.4*Vector(a)) < 1e-15
     @test norm(Vector(3.4*a) - 3.4*Vector(a)) < 1e-15
+    @test norm(Vector(a/3.4) - Vector(a)/3.4) < 1e-15
 end

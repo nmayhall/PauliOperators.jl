@@ -54,6 +54,7 @@ function Base.:*(v::KetSum, a::Number)
     return out
 end
 Base.:*(a::Number, v::KetSum) = v*a
+Base.:/(v::KetSum, a::Number) = v*(1/a)
 
 
 

@@ -48,6 +48,13 @@ TBW
 function scale!(v1::KetSum{N,T}, a::Number) where {N,T}
     map!(x->x*a, values(v1))
 end
+function Base.:*(v::KetSum, a::Number)
+    out = deepcopy(v)
+    scale!(out,a)
+    return out
+end
+Base.:*(a::Number, v::KetSum) = v*a
+
 
 
 """

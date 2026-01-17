@@ -17,6 +17,7 @@ module PauliOperators
     include("addition.jl")
     include("conversions.jl")
     include("expectation_value.jl")
+    include("inner_product.jl")
 
     const ⊗ = otimes
     const ⊕ = osum
@@ -35,7 +36,8 @@ module PauliOperators
     export ⊗
     export ⊕
     export expectation_value
-    export matrix_element 
+    export matrix_element
+    export inner_product 
 
     export symplectic_phase
     export coeff

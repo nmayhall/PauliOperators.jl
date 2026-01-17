@@ -60,6 +60,21 @@ function expectation_value(p::PauliSum{N,T}, d::DyadSum{N,T}) where {N,T}
     return eval 
 end
 
+function expectation_value(O::PauliSum, v::KetSum)
+    ev = 0
+    for (p,c) in O
+        for (k1,c1) in v
+            ev += expectation_value(p,k1)*c*c1'*c1
+            for (k2,c2) in v
+                k2 != k1 || continue
+                ev += matrix_element(k2', p, k1)*c*c2'*c1
+            end
+        end
+    end
+    return ev
+end
+
+
 function matrix_element(b::Bra{N}, p::PauliBasis{N}, k::Ket{N}) where N
     # <b| ZZZ...*XXX...|k> (1im)^sp
     sgn = count_ones(p.z & b.v)  # sgn <j| = <j| z 
@@ -80,4 +95,15 @@ function matrix_element(b::Bra{N}, p::PauliSum{N,T}, k::Ket{N}) where {N,T}
         eval += matrix_element(b, pi, k) * ci
     end
     return eval 
+end
+
+function matrix_element(b::KetSum{N}, p::PauliBasis{N}, k::KetSum{N}) where {N}
+    eval = 0.0
+    if length(k) < length(b)
+        pk = p*k
+        return inner_product(b, pk)
+    else 
+        pb = p*b
+        return inner_product(pb, k)
+    end
 end

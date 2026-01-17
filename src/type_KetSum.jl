@@ -5,6 +5,11 @@ KetSum(N::Integer, T::Type) = Dict{Ket{N}, T}()
 function KetSum(N; T=Float64)
     return Dict{Ket{N}, T}()
 end
+function KetSum(k::Ket{N}; T=Float64) where N
+    out = KetSum(N, T=T)
+    out[k] = 1 
+    return out
+end
     
 
 Base.adjoint(d::KetSum{N,T}) where {N,T} = Adjoint(d)

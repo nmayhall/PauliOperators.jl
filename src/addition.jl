@@ -17,6 +17,19 @@ function Base.sum!(ps1::PauliSum{N,T}, ps2::Adjoint{<:Any, PauliSum{N,T}}) where
     end
     return ps1
 end
+
+
+function Base.sum!(O::KetSum{N,T}, k::KetSum{N}) where {N,T}
+    out = KetSum(N)
+    for (p,c) in O
+        c2,k2 = p*k
+        tmp = get(out, k2, 0.0)
+        out[k2] = tmp + c2*c
+    end
+    return out 
+end
+
+
 Base.:+(ps2::Adjoint{<:Any, PauliSum{N,T}}, ps1::PauliSum{N,T}) where {N,T} = ps1 + ps2 
 
 

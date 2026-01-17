@@ -48,6 +48,29 @@ function Base.:*(d::Union{Dyad{N}, DyadBasis{N}}, p::Union{Pauli{N}, PauliBasis{
     return Dyad{N}(new_coeff * coeff(d) , d.ket, new_bra)
 end 
 
+function Base.:*(p::Union{Pauli{N}, PauliBasis{N}}, ks::KetSum{N,T}) where {N,T}
+    out = KetSum(N, T=T)
+    for (k,c) in ks
+        c2,k2 = p*k
+        tmp = get(out, k2, 0.0)
+        out[k2] = tmp + c2*c
+    end
+    return out 
+end
+
+
+
+function Base.:*(O::PauliSum{N,T}, k::Ket{N}) where {N,T}
+    out = KetSum(N)
+    for (p,c) in O
+        c2,k2 = p*k
+        tmp = get(out, k2, 0.0)
+        out[k2] = tmp + c2*c
+    end
+    return out 
+end
+
+
 
 # function Base.:*(p::Union{Pauli{N}, PauliBasis{N}}, d::DyadSum{N,T}) where {N,T}
 #     out = DyadSum(N)

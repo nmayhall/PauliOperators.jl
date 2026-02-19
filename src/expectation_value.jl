@@ -107,3 +107,20 @@ function matrix_element(b::KetSum{N}, p::PauliBasis{N}, k::KetSum{N}) where {N}
         return inner_product(pb, k)
     end
 end
+
+function matrix_element(b::KetSum{N}, p::PauliSum{N}, k::KetSum{N}) where {N}
+    eval = 0.0
+    σ = p*k
+    return inner_product(b,σ)    
+end
+
+# function matrix_element(b::Adjoint{<:Any, <:KetSum{N}}, p::PauliSum{N}, k::KetSum{N}) where {N}
+#     eval = 0.0
+#     if length(k) < length(b)
+#         pk = p*k
+#         return inner_product(b, pk)
+#     else 
+#         pb = p*b
+#         return inner_product(pb, k)
+#     end
+# end

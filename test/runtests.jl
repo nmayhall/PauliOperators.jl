@@ -8,4 +8,5 @@ using Test
     include("test_multiplication.jl")
     include("test_addition.jl")
     include("test_allocations.jl")
+    include("test_stochastic.jl")
 end

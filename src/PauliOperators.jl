@@ -3,6 +3,7 @@ module PauliOperators
     using Printf
     using LinearAlgebra
     using StaticArrays
+    using Random
 
     include("helpers.jl")
     include("type_PauliBasis.jl")
@@ -18,6 +19,10 @@ module PauliOperators
     include("conversions.jl")
     include("expectation_value.jl")
     include("inner_product.jl")
+    include("evolve.jl")
+    include("clip.jl")
+    include("stochastic.jl")
+    include("stochastic_propagation.jl")
 
     const ⊗ = otimes
     const ⊕ = osum
@@ -41,4 +46,9 @@ module PauliOperators
 
     export symplectic_phase
     export coeff
+
+    export evolve, evolve!
+    export weight, coeff_clip!, weight_clip!
+    export stochastic_clip!
+    export stochastic_propagate
 end

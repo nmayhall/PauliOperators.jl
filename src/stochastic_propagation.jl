@@ -24,10 +24,12 @@ Each trial:
 - `verbose::Int=1`: print level
 
 # Returns
-Named tuple `(mean, stderr, samples)` where:
+Named tuple with fields:
 - `mean`: average expectation value across runs
 - `stderr`: standard error of the mean
 - `samples`: Vector{Float64} of individual run results
+- `n_terms_mean`: average number of Pauli terms at end of each run
+- `n_terms_std`: standard deviation of term counts across runs
 """
 function stochastic_propagate(
     O0::PauliSum{N,T},
@@ -46,6 +48,7 @@ function stochastic_propagate(
     ng == length(angles) || throw(DimensionMismatch("generators and angles must have same length"))
 
     samples = Vector{Float64}(undef, n_samples)
+    term_counts = Vector{Int}(undef, n_samples)
 
     Threads.@threads for m in 1:n_samples
         rng = Random.Xoshiro(seed + m)
@@ -66,15 +69,20 @@ function stochastic_propagate(
             weight_clip!(Ot, max_weight)
         end
 
+        term_counts[m] = length(Ot)
         samples[m] = real(expectation_value(Ot, ψ))
     end
 
     μ = sum(samples) / n_samples
     σ = sqrt(sum((s - μ)^2 for s in samples) / (n_samples * (n_samples - 1)))
 
+    n_mean = sum(term_counts) / n_samples
+    n_std = sqrt(sum((n - n_mean)^2 for n in term_counts) / (n_samples - 1))
+
     if verbose >= 1
-        @printf(" SPP: mean = %12.8f  stderr = %12.8f  n_samples = %i\n", μ, σ, n_samples)
+        @printf(" SPP: mean = %12.8f  stderr = %12.8f  n_terms = %.1f +/- %.1f  n_samples = %i\n",
+                μ, σ, n_mean, n_std, n_samples)
     end
 
-    return (mean=μ, stderr=σ, samples=samples)
+    return (mean=μ, stderr=σ, samples=samples, n_terms_mean=n_mean, n_terms_std=n_std)
 end

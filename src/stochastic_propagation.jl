@@ -30,6 +30,8 @@ Named tuple with fields:
 - `samples`: Vector{Float64} of individual run results
 - `n_terms_mean`: average number of Pauli terms at end of each run
 - `n_terms_std`: standard deviation of term counts across runs
+- `term_counts`: Vector{Int} of per-run final term counts
+- `max_term_counts`: Vector{Int} of per-run peak term counts (before compression)
 """
 function stochastic_propagate(
     O0::PauliSum{N,T},
@@ -49,13 +51,20 @@ function stochastic_propagate(
 
     samples = Vector{Float64}(undef, n_samples)
     term_counts = Vector{Int}(undef, n_samples)
+    max_term_counts = Vector{Int}(undef, n_samples)
 
     Threads.@threads for m in 1:n_samples
+    # for m in 1:n_samples
         rng = Random.Xoshiro(seed + m)
         Ot = deepcopy(O0)
+        peak = length(Ot)
 
         for (idx, (gi, θi)) in enumerate(zip(generators, angles))
             evolve!(Ot, gi, θi)
+            nt = length(Ot)
+            if nt > peak
+                peak = nt
+            end
 
             if idx % compress_every == 0
                 stochastic_clip!(Ot, ε; rng=rng)
@@ -70,6 +79,7 @@ function stochastic_propagate(
         end
 
         term_counts[m] = length(Ot)
+        max_term_counts[m] = peak
         samples[m] = real(expectation_value(Ot, ψ))
     end
 
@@ -84,5 +94,7 @@ function stochastic_propagate(
                 μ, σ, n_mean, n_std, n_samples)
     end
 
-    return (mean=μ, stderr=σ, samples=samples, n_terms_mean=n_mean, n_terms_std=n_std)
+    return (mean=μ, stderr=σ, samples=samples,
+            n_terms_mean=n_mean, n_terms_std=n_std,
+            term_counts=term_counts, max_term_counts=max_term_counts)
 end

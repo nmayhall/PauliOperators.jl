@@ -21,9 +21,12 @@ function stochastic_clip!(ps::PauliSum{N,T}, ε::Real;
             ps[basis] = ε * (c / ac)   # promote (preserves phase for complex T)
         else
             push!(to_delete, basis)     # mark for deletion
+            # ps[basis] = 0.0     # mark for deletion
         end
     end
 
+    
+    # clip!(ps, thresh=1e-16)
     for basis in to_delete
         delete!(ps, basis)
     end

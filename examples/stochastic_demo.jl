@@ -133,8 +133,8 @@ function run_demo(; N::Int=8, dt::Float64=0.1, n_trotter::Int=30,
     n_stoch_mean    = Float64[]
     n_stoch_std     = Float64[]
     for eps in thresholds
-        result = stochastic_propagate(O, full_generators, full_angles, psi, eps*100;
-                                      n_samples=n_samples*100, seed=42, verbose=0)
+        @time result = stochastic_propagate(O, full_generators, full_angles, psi, eps*100;
+                                      n_samples=n_samples, seed=42, verbose=0)
         push!(e_stoch_mean, result.mean)
         push!(e_stoch_stderr, result.stderr)
         push!(n_stoch_mean, result.n_terms_mean)

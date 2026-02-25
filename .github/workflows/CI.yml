@@ -63,3 +63,7 @@ jobs:
             using PauliOperators
             DocMeta.setdocmeta!(PauliOperators, :DocTestSetup, :(using PauliOperators); recursive=true)
             doctest(PauliOperators)'
+            - name: Upload coverage reports to Codecov
+    uses: codecov/codecov-action@v5
+    with:
+      token: ${{ secrets.CODECOV_TOKEN }}

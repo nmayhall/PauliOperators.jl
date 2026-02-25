@@ -12,7 +12,7 @@ end
 """
     Ket(vec::Vector{T}) where T<:Union{Bool, Integer}
 
-TBW
+Create a `Ket` from a vector of 0s and 1s representing qubit occupations.
 """
 function Ket(vec::Vector{T}) where T<:Union{Bool, Integer}
     two = Int128(2)
@@ -40,7 +40,7 @@ end
 """
     Ket(N::Integer, v::Integer)
 
-TBW
+Create an `N`-qubit `Ket` from the integer `v` (bits beyond `N` are masked off).
 """
 function Ket(N::Integer, v::Integer)
     for i in N+1:128
@@ -68,8 +68,6 @@ Base.adjoint(d::Ket{N}) where N = Bra{N}(d.v)
 Base.adjoint(d::Bra{N}) where N = Ket{N}(d.v)
 
 
-# Base.rand(T::Type{Ket{N}}) where N = T(rand(0:Int128(2)^N-1))
-# Base.rand(T::Type{Bra{N}}) where N = T(rand(0:Int128(2)^N-1))
 Base.rand(T::Type{Ket{N}}) where N = T(rand(Int128) & (Int128(2)^N - Int128(1)))
 Base.rand(T::Type{Bra{N}}) where N = T(rand(Int128) & (Int128(2)^N - Int128(1)))
 
@@ -80,9 +78,9 @@ Base.rand(T::Type{Bra{N}}) where N = T(rand(Int128) & (Int128(2)^N - Int128(1)))
 
 
 """
-    Base.show(io::IO, P::Pauli{N}) where N
+    Base.show(io::IO, P::Union{Ket, Bra})
 
-TBW
+Print the ket/bra string representation (e.g., `|010>` or `<010|`).
 """
 function Base.show(io::IO, P::Union{Ket,Bra})
     print(io, string(P))

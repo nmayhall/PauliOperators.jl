@@ -67,15 +67,14 @@ function Base.Matrix(p::PauliBasis{N}) where N
     Y = [0 -1im; 1im 0]
     Z = [1 0; 0 -1]
     I = [1 0; 0 1]
-    # for i in reverse(1:N)
     for i in 1:N
-        if str[i] == "X"[1] 
+        if str[i] == 'X'
             mat = kron(X,mat)
-        elseif str[i] == "Y"[1]
+        elseif str[i] == 'Y'
             mat = kron(Y,mat)
-        elseif str[i] == "Z"[1]
+        elseif str[i] == 'Z'
             mat = kron(Z,mat)
-        elseif str[i] == "I"[1]
+        elseif str[i] == 'I'
             mat = kron(I,mat)
         else
             throw(ErrorException)
@@ -88,15 +87,15 @@ end
 PauliBasis(p::PauliBasis) = p
 
 """
-    Base.string(p::Pauli{N}) where N
+    Base.string(p::PauliBasis{N}) where N
 
-Display, y = iY
+Return a string representation. Y sites are displayed as `Y`.
 """
 function Base.string(p::PauliBasis{N}) where N
     yloc = get_on_bits(p.x & p.z)
     Xloc = get_on_bits(p.x & ~p.z)
     Zloc = get_on_bits(p.z & ~p.x)
-    out = ["I" for i in 1:128]
+    out = ["I" for i in 1:N]
 
     for i in Xloc
         out[i] = "X"
@@ -107,12 +106,9 @@ function Base.string(p::PauliBasis{N}) where N
     for i in Zloc
         out[i] = "Z"
     end
-    return join(out[1:N])
+    return join(out)
 end
 
-# function Base.rand(T::Type{PauliBasis{N}}) where N
-#     return PauliBasis{N}(rand(0:Int128(2)^N-1), rand(0:Int128(2)^N-1))
-# end
 function Base.rand(T::Type{PauliBasis{N}}) where N
     max_val = Int128(2)^N - Int128(1)
     return PauliBasis{N}(rand(Int128) & max_val, rand(Int128) & max_val)

@@ -8,13 +8,20 @@ function weight(p::PauliBasis)
 end
 
 """
-    coeff_clip!(ps::PauliSum{N}; thresh=1e-16)
+    clip!(ps::PauliSum{N}; thresh=1e-16)
 
-Hard truncation: remove terms with |c| <= thresh.
+Delete Pauli terms with coefficients smaller than `thresh`.
 """
-function coeff_clip!(ps::PauliSum{N}; thresh=1e-16) where {N}
+function clip!(ps::PauliSum{N}; thresh=1e-16) where {N}
     return filter!(p->abs(p.second) > thresh, ps)
 end
+
+"""
+    coeff_clip!(ps::PauliSum{N}; thresh=1e-16)
+
+Hard truncation: remove terms with |c| <= thresh. Alias for `clip!`.
+"""
+coeff_clip!(ps::PauliSum; thresh=1e-16) = clip!(ps; thresh=thresh)
 
 """
     weight_clip!(ps::PauliSum{N}, max_weight::Int)

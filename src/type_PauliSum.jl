@@ -209,9 +209,9 @@ Base.keys(ps::Adjoint{<:Any, PauliSum{N,T}}) where {N,T} = keys(ps.parent)
 
 
 """
-    otimes(p1::PauliSum{N}, p2::PauliSum{M}) where {N,M}
+    otimes(p1::PauliSum{N,T}, p2::PauliSum{M,T}) where {N,M,T}
 
-TBW
+Tensor product of two `PauliSum`s, returning a `PauliSum{N+M}`.
 """
 function otimes(p1::PauliSum{N,T}, p2::PauliSum{M,T}) where {N,M,T}
     out = PauliSum(N+M, T)

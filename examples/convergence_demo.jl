@@ -91,13 +91,14 @@ function run_convergence(; N::Int=8, dt::Float64=0.1, n_trotter::Int=30,
     O = PauliSum(N, ComplexF64)
     O[PauliBasis(Pauli(N, Z=[1]))]    = 1.0
     O[PauliBasis(Pauli(N, X=[1,2]))]  = 0.5
-    O[PauliBasis(Pauli(N, Y=[1,2]))]  = 0.5
-    O[PauliBasis(Pauli(N, Z=[1,2]))]  = 0.25
-
+    O[PauliBasis(Pauli(N, X=[2], Y=[3]))]  = 0.5
+    O[PauliBasis(Pauli(N, Z=[3,4]))]  = 0.25
     @printf("  Initial observable: %d Pauli terms\n", length(O))
+    display(O)
 
     # Initial state: |000...0>
-    psi = Ket{N}(0)
+    psi = rand(Ket{N})
+    display(psi)
 
     # Build Trotter circuit
     generators = PauliBasis{N}[]
@@ -211,8 +212,9 @@ end
 
 # ── Run ──────────────────────────────────────────────────────────────────────
 
-results = run_convergence(N=40, dt=0.1, n_trotter=50, eps=.50,
-                          sample_counts=[10, 25, 50, 100, 250, 500, 1000, 2500, 5000])
+results = run_convergence(N=40, dt=0.1, n_trotter=20, eps=.50,
+                        #   sample_counts=[10, 25, 50, 100, 250, 500, 1000])
+                          sample_counts=[10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000])
 
 
 # ── Plot (optional, requires Plots.jl) ──────────────────────────────────────

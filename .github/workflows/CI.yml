@@ -26,9 +26,6 @@ jobs:
         arch:
           - x64
             #- x86
-        allow_failures:
-          - julia_version: 'nightly' 
-
     steps:
       - uses: actions/checkout@v2
       - uses: julia-actions/setup-julia@v1
@@ -58,12 +55,12 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - run: |
-          julia --project=docs -e '
+          julia --project=docs -e ' 
             using Documenter: DocMeta, doctest
             using PauliOperators
             DocMeta.setdocmeta!(PauliOperators, :DocTestSetup, :(using PauliOperators); recursive=true)
-            doctest(PauliOperators)'
-            - name: Upload coverage reports to Codecov
-    uses: codecov/codecov-action@v5
-    with:
-      token: ${{ secrets.CODECOV_TOKEN }}
+            doctest(PauliOperators)' 
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}

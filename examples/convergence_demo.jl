@@ -74,6 +74,7 @@ function run_convergence(; N::Int=8, dt::Float64=0.1, n_trotter::Int=30,
                            sample_counts::Vector{Int}=[10, 25, 50, 100, 250, 500, 1000, 2500, 5000],
                            seed::Int=42)
 
+    Random.seed!(seed)
     t_total = dt * n_trotter
 
     println("=" ^ 90)
@@ -118,11 +119,11 @@ function run_convergence(; N::Int=8, dt::Float64=0.1, n_trotter::Int=30,
 
     # ── 1. Exact evolution ─────────────────────────────────────────────────
 
-    print("  Computing exact (no truncation)... ")
+    print("  Computing deterministic truncation)... ")
     O_exact = deepcopy(O)
     @time for (g, a) in zip(full_generators, full_angles)
         evolve!(O_exact, g, a)
-        clip!(O_exact, thresh=1e-5)
+        clip!(O_exact, thresh=1e-6)
     end
     e_exact = real(expectation_value(O_exact, psi))
     n_terms_exact = length(O_exact)

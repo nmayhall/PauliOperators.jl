@@ -42,7 +42,20 @@ end
 function Base.:+(ps1::DyadSum, ps2::DyadSum)
     out = deepcopy(ps2)
     mergewith!(+, out, ps1)
-    return out 
+    return out
+end
+
+function Base.:+(ks1::KetSum{N,T}, ks2::KetSum{N,T}) where {N,T}
+    out = deepcopy(ks2)
+    mergewith!(+, out, ks1)
+    return out
+end
+
+function Base.:-(ks1::KetSum{N,T}, ks2::KetSum{N,T}) where {N,T}
+    out = deepcopy(ks2)
+    map!(x->-x, values(out))
+    mergewith!(+, out, ks1)
+    return out
 end
 
 """

@@ -9,4 +9,7 @@ using Test
     include("test_addition.jl")
     include("test_allocations.jl")
     include("test_stochastic.jl")
+    include("test_phase1.jl")
+    include("test_truncation.jl")
+    include("test_evolution.jl")
 end

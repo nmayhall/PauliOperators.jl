@@ -44,3 +44,76 @@ function evolve!(O::PauliSum{N, T}, G::PauliBasis{N}, θ::Real) where {N,T}
     sum!(O, sin_branch)
     return O
 end
+
+"""
+    evolve(K::KetSum{N, T}, G::PauliBasis{N}, θ::Real)
+
+Schrödinger-picture evolution: K(θ) = exp(-iθ/2 G) K
+
+Applies the unitary exp(-iθ/2 G) to a KetSum state vector.
+"""
+function evolve(K::KetSum{N, T}, G::PauliBasis{N}, θ::Real) where {N,T}
+    _cos = cos(θ/2)
+    _sin = -1im*sin(θ/2)
+    K2 = KetSum(N, T=ComplexF64)
+    GK = KetSum(N, T=ComplexF64)
+    for (k, c) in K
+        K2[k] = c * _cos
+        ci, ki = G * k
+        tmp = get(GK, ki, 0)
+        GK[ki] = tmp + _sin * c * ci
+    end
+    for (k, c) in GK
+        tmp = get(K2, k, 0)
+        K2[k] = c + tmp
+    end
+    return K2
+end
+
+"""
+    evolve(O::PauliSum{N,T}, generators::Vector{PauliBasis{N}}, angles::Vector{<:Real};
+           truncation::TruncationStrategy=NoTruncation(),
+           correction::CorrectionAccumulator=NoCorrection())
+
+Heisenberg-picture sequence evolution: applies generators left to right, producing
+
+    U_n† ⋯ U_1† O U_1 ⋯ U_n
+
+where Uₖ = exp(-iθₖ/2 Gₖ). The effective right-side unitary is U₁U₂⋯Uₙ.
+
+Sequences from `trotterize` and `qdrift` are designed for this convention.
+"""
+function evolve(O::PauliSum{N,T}, generators::Vector{PauliBasis{N}}, angles::Vector{<:Real};
+                truncation::TruncationStrategy=NoTruncation(),
+                correction::CorrectionAccumulator=NoCorrection()) where {N,T}
+    length(generators) == length(angles) || throw(DimensionMismatch("generators and angles must have same length"))
+    Ot = deepcopy(O)
+    for (gi, θi) in zip(generators, angles)
+        evolve!(Ot, gi, θi)
+        truncate!(Ot, truncation, correction)
+    end
+    return Ot
+end
+
+"""
+    evolve(K::KetSum{N,T}, generators::Vector{PauliBasis{N}}, angles::Vector{<:Real})
+
+Schrödinger-picture sequence evolution: applies generators left to right, producing
+
+    Uₙ ⋯ U₂ U₁ |K⟩
+
+where Uₖ = exp(-iθₖ/2 Gₖ). The effective unitary is Uₙ⋯U₁ (reversed order).
+
+Note: sequences from `trotterize` and `qdrift` use the Heisenberg convention.
+To use them with KetSum, reverse the sequence:
+
+    evolve(K, reverse(generators), reverse(angles))
+"""
+function evolve(K::KetSum{N,T}, generators::Vector{PauliBasis{N}}, angles::Vector{<:Real}) where {N,T}
+    length(generators) == length(angles) || throw(DimensionMismatch("generators and angles must have same length"))
+    Kt = deepcopy(K)
+    for (gi, θi) in zip(generators, angles)
+        Kt = evolve(Kt, gi, θi)
+    end
+    return Kt
+end

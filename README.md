@@ -4,6 +4,8 @@
 [![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://nmayhall.github.io/PauliOperators.jl/dev/)
 [![Build Status](https://github.com/nmayhall/PauliOperators.jl/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/nmayhall/PauliOperators.jl/actions/workflows/CI.yml?query=branch%3Amain)
 [![Coverage](https://codecov.io/gh/nmayhall/PauliOperators.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/nmayhall/PauliOperators.jl)
+[![Build Status (v3-dev)](https://github.com/nmayhall/PauliOperators.jl/actions/workflows/CI.yml/badge.svg?branch=v3-dev)](https://github.com/nmayhall/PauliOperators.jl/actions/workflows/CI.yml?query=branch%3Av3-dev)
+[![Coverage (v3-dev)](https://codecov.io/gh/nmayhall/PauliOperators.jl/branch/v3-dev/graph/badge.svg)](https://codecov.io/gh/nmayhall/PauliOperators.jl/tree/v3-dev)
 
 A Julia package for efficient manipulation of Pauli operators and quantum states using bitstring representations. The package uses symplectic representation to encode tensor products of Pauli operators as pairs of binary strings, enabling fast operations on systems with up to 128 qubits.
 

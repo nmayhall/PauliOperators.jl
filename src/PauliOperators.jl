@@ -23,10 +23,8 @@ module PauliOperators
     include("statistics.jl")
     include("commutator.jl")
     include("clip.jl")
-    include("stochastic.jl")
     include("truncation.jl")
     include("evolve.jl")
-    include("stochastic_propagation.jl")
     include("decompose.jl")
     include("gates.jl")
     include("analysis.jl")
@@ -60,7 +58,6 @@ module PauliOperators
     export weight, coeff_clip!, weight_clip!
     export majorana_weight, majorana_weight_clip!
     export stochastic_clip!
-    export stochastic_propagate
 
     export variance, covariance
     export commutator, anticommutator

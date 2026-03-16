@@ -49,7 +49,7 @@ DBF.weight_clip!(Ot, max_weight)
 using PauliOperators: evolve!, coeff_clip!, weight_clip!
 
 evolve!(Ot, gi, θi)
-coeff_clip!(Ot; thresh=thresh)
+coeff_clip!(Ot, thresh)
 weight_clip!(Ot, max_weight)
 ```
 

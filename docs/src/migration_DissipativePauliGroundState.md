@@ -6,7 +6,7 @@ This document describes the changes needed to update DissipativePauliGroundState
 
 DissipativePauliGroundState.jl currently:
 1. Imports `commute` from PauliOperators (now exported)
-2. Extends `PauliOperators.clip!` with its own signature
+2. Extends `PauliOperators.clip!` with its own signature (`clip!` is now deprecated in favor of `coeff_clip!`)
 3. Redefines `evolve!` for PauliSum (direct conflict)
 4. Reimplements weight-based clipping and adaptive truncation
 
@@ -28,7 +28,7 @@ using PauliOperators
 using PauliOperators: commute
 import PauliOperators: clip!
 
-# New (commute is now exported, no special import needed):
+# New (commute is now exported, clip! is deprecated in favor of coeff_clip!):
 using PauliOperators
 ```
 
@@ -65,7 +65,14 @@ function PauliOperators.clip!(ps::PauliSum{N,T}; thresh=1e-16) where {N,T}
 end
 ```
 
-PauliOperators already provides `clip!` for PauliSum. Remove this extension if the behavior is identical.
+**Action**: Remove this extension entirely. `clip!` is now a deprecated alias for `coeff_clip!(ps, thresh)`, which takes a required positional argument. Replace all call sites:
+```julia
+# Old:
+clip!(O; thresh=thresh)
+
+# New:
+coeff_clip!(O, thresh)
+```
 
 ### Adaptive truncation
 

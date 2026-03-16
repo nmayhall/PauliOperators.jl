@@ -23,7 +23,7 @@ The following functions are now provided by PauliOperators and should be deleted
 | DBF function | PauliOperators replacement | Notes |
 |---|---|---|
 | `weight(p)` | `weight(p)` | Identical |
-| `coeff_clip!(ps; thresh)` | `coeff_clip!(ps; thresh)` | Identical, already exported |
+| `coeff_clip!(ps; thresh)` | `coeff_clip!(ps, thresh)` | Now positional arg (keyword `clip!` is deprecated) |
 | `weight_clip!(ps, w)` | `weight_clip!(ps, w)` | Identical, already exported |
 | `inner_product(A, B)` | `inner_product(A, B)` | Identical |
 | `norm(ps)` | `norm(ps)` | Use `LinearAlgebra.norm(ps, p)` for p-norms |
@@ -92,7 +92,7 @@ Replace any manual evolution loops:
 # Old pattern in DBF:
 for (gi, θi) in zip(generators, angles)
     evolve!(O, gi, θi)
-    coeff_clip!(O; thresh=thresh)
+    coeff_clip!(O, thresh)
     weight_clip!(O, max_weight)
 end
 

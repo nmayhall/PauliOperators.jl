@@ -77,6 +77,7 @@ function qdrift(H::PauliSum{N,T}, dt::Real; n_samples::Int=1,
     coeffs = [real(c) for (_, c) in terms]
     abs_coeffs = abs.(coeffs)
     λ = sum(abs_coeffs)
+    # λ = norm(H,1)
     probs = abs_coeffs ./ λ
 
     # Build cumulative distribution for sampling

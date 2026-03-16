@@ -62,12 +62,12 @@ using Random
     @testset "StochasticCoeffTruncation" begin
         N = 4
         ps = PauliSum(N, ComplexF64)
-        # Add one large and many small terms
-        ps[PauliBasis("IIII")] = 1.0 + 0im
+        # Add many small terms, then set the large term last so it can't be overwritten
         for i in 1:20
             p = rand(PauliBasis{N})
             ps[p] = 0.001 * randn() + 0im
         end
+        ps[PauliBasis("IIII")] = 1.0 + 0im
 
         n_before = length(ps)
         truncate!(ps, StochasticCoeffTruncation(0.01, MersenneTwister(123)))

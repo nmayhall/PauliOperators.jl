@@ -150,10 +150,10 @@ function _apply!(O::PauliSum{N}, s::AdaptiveTruncation) where N
         coeffs = sort(abs.(collect(values(O))))
         if length(coeffs) > s.max_terms
             thresh = coeffs[end - s.max_terms]
-            clip!(O; thresh=thresh)
+            coeff_clip!(O; thresh=thresh)
         end
     else
-        clip!(O; thresh=s.min_thresh)
+        coeff_clip!(O; thresh=s.min_thresh)
     end
     return O
 end

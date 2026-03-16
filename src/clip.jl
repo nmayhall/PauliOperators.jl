@@ -8,20 +8,21 @@ function weight(p::PauliBasis)
 end
 
 """
-    clip!(ps::PauliSum{N}; thresh=1e-16)
+    coeff_clip!(ps::PauliSum{N}; thresh=1e-16)
 
-Delete Pauli terms with coefficients smaller than `thresh`.
+Remove Pauli terms with |coefficient| <= `thresh`.
 """
-function clip!(ps::PauliSum{N}; thresh=1e-16) where {N}
+function coeff_clip!(ps::PauliSum{N}; thresh=1e-16) where {N}
     return filter!(p->abs(p.second) > thresh, ps)
 end
 
 """
-    coeff_clip!(ps::PauliSum{N}; thresh=1e-16)
+    clip!(ps::PauliSum{N}; thresh=1e-16)
 
-Hard truncation: remove terms with |c| <= thresh. Alias for `clip!`.
+!!! warning "Deprecated"
+    Use `coeff_clip!` instead for consistency with `weight_clip!`, `majorana_weight_clip!`, etc.
 """
-coeff_clip!(ps::PauliSum; thresh=1e-16) = clip!(ps; thresh=thresh)
+clip!(ps::PauliSum; thresh=1e-16) = coeff_clip!(ps; thresh=thresh)
 
 """
     weight_clip!(ps::PauliSum{N}, max_weight::Int)
@@ -68,13 +69,21 @@ function majorana_weight_clip!(ps::PauliSum{N}, max_weight::Int) where {N}
 end
 
 """
-    clip!(ks::KetSum{N}; thresh=1e-16) where {N}
+    coeff_clip!(ks::KetSum{N}; thresh=1e-16) where {N}
 
-Delete Ket terms with coefficients smaller than `thresh`.
+Remove Ket terms with |coefficient| <= `thresh`.
 """
-function clip!(ks::KetSum{N}; thresh=1e-16) where {N}
+function coeff_clip!(ks::KetSum{N}; thresh=1e-16) where {N}
     return filter!(p->abs(p.second) > thresh, ks)
 end
+
+"""
+    clip!(ks::KetSum{N}; thresh=1e-16) where {N}
+
+!!! warning "Deprecated"
+    Use `coeff_clip!` instead.
+"""
+clip!(ks::KetSum; thresh=1e-16) = coeff_clip!(ks; thresh=thresh)
 
 """
     offdiag(ps::PauliSum{N,T}) where {N,T}

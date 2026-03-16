@@ -32,13 +32,21 @@ function Base.show(io::IO, ::MIME"text/plain", ps::Adjoint{<:Any, DyadSum{N,T}})
 end
 
 """
-    clip!(ps::DyadSum; thresh=1e-16)
+    coeff_clip!(ps::DyadSum; thresh=1e-16)
 
-Delete Dyad terms with coefficients smaller than `thresh`.
+Remove Dyad terms with |coefficient| <= `thresh`.
 """
-function clip!(ps::DyadSum{N,T}; thresh=1e-16) where {N,T}
+function coeff_clip!(ps::DyadSum{N,T}; thresh=1e-16) where {N,T}
     filter!(p->abs(p.second) > thresh, ps)
 end
+
+"""
+    clip!(ps::DyadSum; thresh=1e-16)
+
+!!! warning "Deprecated"
+    Use `coeff_clip!` instead.
+"""
+clip!(ps::DyadSum; thresh=1e-16) = coeff_clip!(ps; thresh=thresh)
 
 
 function Base.Matrix(ds::DyadSum{N, T}) where {N,T}

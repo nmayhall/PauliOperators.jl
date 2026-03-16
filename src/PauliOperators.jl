@@ -44,7 +44,7 @@ module PauliOperators
     export Dyad
     export DyadSum
     export KetSum
-    export clip!
+    export clip!  # deprecated alias for coeff_clip!
     export ⊗
     export ⊕
     export otimes, osum

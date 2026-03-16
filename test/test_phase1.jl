@@ -260,14 +260,14 @@ using Test
         @test Matrix(anti_multi) ≈ Matrix(A) * Matrix(B) + Matrix(B) * Matrix(A)
     end
 
-    @testset "clip! for KetSum" begin
+    @testset "coeff_clip! for KetSum" begin
         N = 3
         ks = KetSum(N, ComplexF64)
         ks[Ket(N, 0)] = 1.0 + 0im
         ks[Ket(N, 1)] = 1e-18 + 0im
         ks[Ket(N, 2)] = 0.5 + 0im
 
-        clip!(ks)
+        coeff_clip!(ks)
         @test length(ks) == 2
         @test haskey(ks, Ket(N, 0))
         @test haskey(ks, Ket(N, 2))

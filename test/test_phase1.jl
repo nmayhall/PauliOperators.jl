@@ -267,7 +267,7 @@ using Test
         ks[Ket(N, 1)] = 1e-18 + 0im
         ks[Ket(N, 2)] = 0.5 + 0im
 
-        coeff_clip!(ks)
+        coeff_clip!(ks, 1e-16)
         @test length(ks) == 2
         @test haskey(ks, Ket(N, 0))
         @test haskey(ks, Ket(N, 2))

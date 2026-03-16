@@ -124,7 +124,7 @@ using Random
         ps2[PauliBasis("XXXI")] = 0.3 + 0im
         ps2[PauliBasis("IIXI")] = 1e-8 + 0im
 
-        coeff_clip!(ps2; thresh=1e-3)
+        coeff_clip!(ps2, 1e-3)
         weight_clip!(ps2, 2)
         @test ps == ps2
     end

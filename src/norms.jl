@@ -80,6 +80,6 @@ Compare two `PauliSum`s for approximate equality based on the norm of their diff
 """
 function Base.isapprox(ps1::PauliSum{N}, ps2::PauliSum{N}; atol=1e-14, rtol=0) where {N}
     diff = ps1 - ps2
-    coeff_clip!(diff; thresh=0.0)
+    coeff_clip!(diff, 0.0)
     return norm(diff) <= atol + rtol * max(norm(ps1), norm(ps2))
 end

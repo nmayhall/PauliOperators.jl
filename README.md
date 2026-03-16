@@ -264,8 +264,7 @@ O_off  = offdiag(O)         # off-diagonal terms only (x != 0)
 
 ### Clipping and filtering
 ```julia
-clip!(O; thresh=1e-8)                # drop terms with |c| < thresh
-coeff_clip!(O; thresh=1e-8)          # same
+coeff_clip!(O; thresh=1e-8)          # drop terms with |c| < thresh
 weight_clip!(O, max_weight)          # drop terms with weight > max_weight
 majorana_weight_clip!(O, max_weight) # drop by Majorana weight
 stochastic_clip!(O, ε)               # stochastic rounding

@@ -106,7 +106,7 @@ function _apply!(O::PauliSum{N}, ::NoTruncation) where N
 end
 
 function _apply!(O::PauliSum{N}, s::CoeffTruncation) where N
-    return coeff_clip!(O, thresh=s.thresh)
+    return coeff_clip!(O, s.thresh)
 end
 
 function _apply!(O::PauliSum{N}, s::WeightTruncation) where N
@@ -150,10 +150,10 @@ function _apply!(O::PauliSum{N}, s::AdaptiveTruncation) where N
         coeffs = sort(abs.(collect(values(O))))
         if length(coeffs) > s.max_terms
             thresh = coeffs[end - s.max_terms]
-            coeff_clip!(O; thresh=thresh)
+            coeff_clip!(O, thresh)
         end
     else
-        coeff_clip!(O; thresh=s.min_thresh)
+        coeff_clip!(O, s.min_thresh)
     end
     return O
 end

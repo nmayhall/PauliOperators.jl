@@ -202,7 +202,7 @@ end
         ps[PauliBasis(Pauli(N, Z=[1]))] = 1.0
         ps[PauliBasis(Pauli(N, X=[2]))] = 1e-18
 
-        coeff_clip!(ps; thresh=1e-16)
+        coeff_clip!(ps, 1e-16)
         @test length(ps) == 1
         @test haskey(ps, PauliBasis(Pauli(N, Z=[1])))
     end

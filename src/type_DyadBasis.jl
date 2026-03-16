@@ -45,7 +45,7 @@ function Base.iterate(::Type{DyadBasis{N}}, state = 1) where N
     return DyadBasis{N}(Ket{N}(next[1]-1), Bra{N}(next[2]-1)), state+1 
 end
 
-Base.display(d::DyadBasis{N}) where N = println(string(d))
+Base.show(io::IO, d::DyadBasis{N}) where N = print(io, string(d))
 function Base.string(d::DyadBasis{N}) where N
     return string(d.ket)*string(d.bra)
 end

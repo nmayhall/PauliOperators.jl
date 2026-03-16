@@ -174,13 +174,8 @@ function Base.string(p::Pauli{N}) where N
     return join(out)
 end
 
-"""
-    Base.display(p::Pauli{N}) where N
-
-Print the scalar `s` (real + imag) and the Pauli string representation.
-"""
-function Base.display(p::Pauli{N}) where N
-    @printf "% .4f % .4fim | %s\n" real(p.s) imag(p.s) string(p) 
+function Base.show(io::IO, p::Pauli{N}) where N
+    @printf(io, "% .4f % .4fim | %s", real(p.s), imag(p.s), string(p))
 end
 
 

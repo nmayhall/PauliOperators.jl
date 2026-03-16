@@ -19,15 +19,15 @@ function Base.getindex(ds::Adjoint{<:Any,DyadSum{N,T}}, d::Dyad{N}) where {N,T}
 end
 
 
-function Base.display(ps::DyadSum)
-    for (key,val) in ps
-        @printf(" %12.8f +%12.8fi %s\n", real(val), imag(val), key)
+function Base.show(io::IO, ::MIME"text/plain", ps::DyadSum{N,T}) where {N,T}
+    for (key, val) in ps
+        @printf(io, " %12.8f +%12.8fi %s\n", real(val), imag(val), key)
     end
 end
 
-function Base.display(ps::Adjoint{<:Any, DyadSum{N,T}}) where {N,T}
-    for (key,val) in ps.parent
-        @printf(" %12.8f +%12.8fi %s\n", real(val), -imag(val), key')
+function Base.show(io::IO, ::MIME"text/plain", ps::Adjoint{<:Any, DyadSum{N,T}}) where {N,T}
+    for (key, val) in ps.parent
+        @printf(io, " %12.8f +%12.8fi %s\n", real(val), -imag(val), key')
     end
 end
 

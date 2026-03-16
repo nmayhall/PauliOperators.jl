@@ -29,6 +29,7 @@ module PauliOperators
     include("stochastic_propagation.jl")
     include("decompose.jl")
     include("gates.jl")
+    include("analysis.jl")
 
     const ⊗ = otimes
     const ⊕ = osum
@@ -82,4 +83,9 @@ module PauliOperators
     export X_gate, Y_gate, Z_gate, S_gate, T_gate
     export hadamard_to_paulis, cnot_to_paulis
     export X_gate_to_paulis, Z_gate_to_paulis
+
+    # Analysis
+    export get_weight_counts, get_weight_probs
+    export get_majorana_weight_counts, get_majorana_weight_probs
+    export find_top_k, largest, largest_diag
 end

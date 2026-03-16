@@ -48,12 +48,13 @@
 - [ ] Refactor `stochastic_propagate` to use TruncationStrategy (deferred)
 
 ## Phase 4: Utility Functions & Analysis (v2.4.0)
-**Status: NOT STARTED**
+**Status: COMPLETE** (all 8521 tests passing)
 
-- [ ] Weight distribution analysis: `get_weight_counts`, `get_weight_probs`
-- [ ] Top-k selection: `find_top_k`, `largest`, `largest_diag`
-- [ ] Subspace matrix construction: `Matrix(O, S::Vector{Ket})`
-- [ ] Standardize `Base.show` methods (currently mixed show/display)
+- [x] Weight distribution: `get_weight_counts`, `get_weight_probs`, `get_majorana_weight_counts`, `get_majorana_weight_probs` (`src/analysis.jl`)
+- [x] Top-k selection: `find_top_k`, `largest`, `largest_diag` (`src/analysis.jl`)
+- [x] Subspace matrix: `Matrix(O, S::Vector{Ket})`, `Vector(K, S::Vector{Ket})` (`src/analysis.jl`)
+- [x] Standardized `Base.show` methods: converted all `Base.display` to `Base.show(io::IO, ...)` / `Base.show(io::IO, ::MIME"text/plain", ...)` per Julia convention
+- [x] Tests (`test/test_analysis.jl`)
 
 ## Phase 5: Downstream Package Cleanup (v2.5.0)
 **Status: NOT STARTED**

@@ -12,4 +12,5 @@ using Test
     include("test_phase1.jl")
     include("test_truncation.jl")
     include("test_evolution.jl")
+    include("test_analysis.jl")
 end

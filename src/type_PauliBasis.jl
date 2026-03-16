@@ -115,7 +115,7 @@ function Base.rand(T::Type{PauliBasis{N}}) where N
 end
 
 
-Base.display(p::PauliBasis) = println(string(p))
+Base.show(io::IO, p::PauliBasis{N}) where N = print(io, string(p))
 
 function otimes(p1::PauliBasis{N}, p2::PauliBasis{M}) where {N,M} 
     PauliBasis{N+M}(p1.z | p2.z << N, p1.x | p2.x << N)

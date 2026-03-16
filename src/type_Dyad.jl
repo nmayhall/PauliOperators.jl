@@ -57,7 +57,7 @@ function Base.iterate(::Type{Dyad{N}}, state = 1) where N
     return Dyad{N}(true, Ket{N}(next[1]-1), Bra{N}(next[2]-1)), state+1 
 end
 
-Base.display(d::Dyad{N}) where N = println(string(d))
+Base.show(io::IO, d::Dyad{N}) where N = print(io, string(d))
 function Base.string(d::Dyad{N}) where N
     return @sprintf "% .4f % .4fim | %s\n" real(d.s) imag(d.s) string(DyadBasis(d)) 
 end

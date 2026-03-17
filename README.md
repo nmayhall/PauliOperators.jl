@@ -9,6 +9,14 @@
 
 A Julia package for efficient manipulation of Pauli operators and quantum states using bitstring representations. The package uses symplectic representation to encode tensor products of Pauli operators as pairs of binary strings, enabling fast operations on systems with up to 128 qubits.
 
+## Installation
+
+```julia
+using Pkg
+Pkg.Registry.add(url="git@github.com:mayhallgroup/MayhallJuliaRegistry.git")  # one-time setup
+Pkg.add("PauliOperators")
+```
+
 ## Pauli Representation
 
 The format for an arbitrary Pauli operator is:

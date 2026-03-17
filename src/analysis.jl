@@ -131,21 +131,35 @@ end
 Construct the matrix representation of operator `O` in the subspace spanned by kets `S`.
 
 Returns an `nS × nS` matrix where `M[i,j] = ⟨S[i]|O|S[j]⟩`.
+
+Uses X-bitstring grouping for efficiency: for each ket pair `(i,j)`, only Pauli terms
+whose X-bitstring matches `S[i].v ⊻ S[j].v` are visited, rather than all terms in `O`.
 """
 function Base.Matrix(O::PauliSum{N,T}, S::Vector{Ket{N}}) where {N,T}
     nS = length(S)
-    ket_idx = Dict{Ket{N}, Int}()
-    for (i, k) in enumerate(S)
-        ket_idx[k] = i
+
+    # Group Pauli terms by X-bitstring for efficient subspace matrix construction.
+    # Only terms with x == S[i].v ⊻ S[j].v contribute to M[i,j].
+    x_groups = Dict{Int128, Vector{Tuple{Int128, T}}}()
+    for (P, c) in O
+        group = get!(Vector{Tuple{Int128, T}}, x_groups, P.x)
+        push!(group, (P.z, c))
     end
 
+    empty_group = Vector{Tuple{Int128, T}}()
+
     M = zeros(promote_type(T, ComplexF64), nS, nS)
-    for (P, c) in O
-        for (j, kj) in enumerate(S)
-            phase, ki = P * kj
-            idx = get(ket_idx, ki, 0)
-            if idx > 0
-                M[idx, j] += c * phase
+    for i in 1:nS
+        M[i, i] = expectation_value(O, S[i])
+        for j in i+1:nS
+            x = S[i].v ⊻ S[j].v
+            for (z, c) in get(x_groups, x, empty_group)
+                P = PauliBasis{N}(z, x)
+                phase, _ = P * S[j]
+                M[i, j] += phase * c
+
+                phase, _ = P * S[i]
+                M[j, i] += phase * c
             end
         end
     end

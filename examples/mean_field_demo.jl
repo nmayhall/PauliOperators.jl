@@ -186,10 +186,10 @@ try
           label="Trotter (no trunc)", color=:gray, ls=:dash)
     plot!(p1, results.times, results.weight,
           label="WeightTruncation($(results.k))",
-          color=:red,  lw=2, marker=:circle, ms=3)
+          color=:red,  lw=0, marker=:circle, ms=3, msw=0.3)
     plot!(p1, results.times, results.meanfield,
           label="MeanFieldTruncation($(results.k), ψ)",
-          color=:blue, lw=2, marker=:square, ms=3)
+          color=:blue, lw=2, marker=:square, ms=3, msw=0.3)
 
     p2 = plot(results.times, results.var_exact, label="exact",
               color=:black, lw=2.5, ls=:solid,
@@ -200,10 +200,10 @@ try
           label="Trotter (no trunc)", color=:gray, ls=:dash)
     plot!(p2, results.times, results.var_wt,
           label="WeightTruncation($(results.k))",
-          color=:red,  lw=2, marker=:circle, ms=3)
+          color=:red,  lw=2, marker=:circle, ms=3, msw=0.3)
     plot!(p2, results.times, results.var_mf,
           label="MeanFieldTruncation($(results.k), ψ)",
-          color=:blue, lw=2, marker=:square, ms=3)
+          color=:blue, lw=2, marker=:square, ms=3, msw=0.3)
 
     p3 = plot(results.times, results.nt_tr,
               label="Trotter (no trunc)", yscale=:log10,
@@ -211,12 +211,12 @@ try
               title="Operator size",
               color=:gray, ls=:dash)
     plot!(p3, results.times, results.nt_wt, label="WeightTruncation",
-          color=:red,  marker=:circle, ms=3)
+          color=:red,  marker=:circle, ms=3, msw=0.3)
     plot!(p3, results.times, results.nt_mf, label="MeanFieldTruncation",
-          color=:blue, marker=:square, ms=3)
+          color=:blue, marker=:square, ms=3, msw=0.3)
 
     fig = plot(p1, p2, p3, layout=(3, 1), size=(900, 1000))
-    outfile = joinpath(@__DIR__, "mean_field_demo.png")
+    outfile = joinpath(@__DIR__, "mean_field_demo.pdf")
     savefig(fig, outfile)
     println("  Plot saved to: $outfile")
 catch e

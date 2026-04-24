@@ -96,6 +96,23 @@ struct CompositeTruncation <: TruncationStrategy
 end
 CompositeTruncation(s::TruncationStrategy...) = CompositeTruncation(collect(TruncationStrategy, s))
 
+"""
+    MeanFieldTruncation(max_weight::Int, reference::Ket{N})
+
+Replace each Pauli term with weight > `max_weight` by its order-`max_weight`
+mean-field factorization around the computational-basis state `reference`.
+
+Unlike `WeightTruncation`, which discards high-weight terms, this strategy
+expands each high-weight string in single-site fluctuations
+`δP_i = P_i − ⟨P_i⟩ I` and keeps the lower-weight pieces. The result is exact
+when summed to full order and preserves `⟨reference|O|reference⟩` at every
+truncation order.
+"""
+struct MeanFieldTruncation{N} <: TruncationStrategy
+    max_weight::Int
+    reference::Ket{N}
+end
+
 
 # ============================================================
 # _apply! — raw truncation dispatch (internal)
@@ -163,6 +180,10 @@ function _apply!(O::PauliSum{N}, s::CompositeTruncation) where N
         _apply!(O, strategy)
     end
     return O
+end
+
+function _apply!(O::PauliSum{N,T}, s::MeanFieldTruncation{N}) where {N,T}
+    return mean_field_factorize!(O, s.reference, s.max_weight)
 end
 
 

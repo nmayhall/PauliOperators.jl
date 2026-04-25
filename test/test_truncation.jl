@@ -199,6 +199,75 @@ using Random
         @test corr.accumulated_energy ≈ e_final - e_initial
     end
 
+    @testset "CoeffTruncationMF" begin
+        N = 4
+        ψ = Ket(N, 0)  # |0000⟩, ⟨ψ|Z_i|ψ⟩ = +1
+        ps = PauliSum(N, ComplexF64)
+        ps[PauliBasis("IIII")] = 1.0 + 0im
+        ps[PauliBasis("ZIII")] = 5e-4 + 0im   # diagonal, |c| ≤ thresh — redirects (+1·c)
+        ps[PauliBasis("ZZII")] = 1e-4 + 0im   # diagonal, |c| ≤ thresh — redirects (+1·c)
+        ps[PauliBasis("XIII")] = 1e-4 + 0im   # off-diagonal, redirects to 0 (just dropped)
+        ps[PauliBasis("YYII")] = 0.5 + 0im    # large coeff — kept
+
+        e_before = expectation_value(ps, ψ)
+        truncate!(ps, CoeffTruncationMF(1e-3, ψ))
+        e_after = expectation_value(ps, ψ)
+
+        # ⟨ψ|O|ψ⟩ preserved exactly
+        @test e_before ≈ e_after
+        # The two diagonal small terms got dropped from non-identity slots
+        @test !haskey(ps, PauliBasis("ZIII"))
+        @test !haskey(ps, PauliBasis("ZZII"))
+        @test !haskey(ps, PauliBasis("XIII"))
+        # Large term still present
+        @test haskey(ps, PauliBasis("YYII"))
+        # Identity coeff has absorbed the diagonal contributions
+        @test ps[PauliBasis("IIII")] ≈ 1.0 + 5e-4 + 1e-4
+    end
+
+    @testset "WeightTruncationMF" begin
+        N = 4
+        ψ = Ket(N, 0)  # |0000⟩
+        ps = PauliSum(N, ComplexF64)
+        ps[PauliBasis("IIII")] = 1.0 + 0im   # weight 0 — kept
+        ps[PauliBasis("ZIII")] = 0.5 + 0im   # weight 1 — kept
+        ps[PauliBasis("ZZZI")] = 0.3 + 0im   # weight 3, diagonal → redirects (+1·c)
+        ps[PauliBasis("XXXI")] = 0.2 + 0im   # weight 3, off-diagonal → redirects to 0
+        ps[PauliBasis("ZZZZ")] = 0.1 + 0im   # weight 4, diagonal → redirects (+1·c)
+
+        e_before = expectation_value(ps, ψ)
+        truncate!(ps, WeightTruncationMF(2, ψ))
+        e_after = expectation_value(ps, ψ)
+
+        # ⟨ψ|O|ψ⟩ preserved exactly
+        @test e_before ≈ e_after
+        # High-weight terms removed
+        @test !haskey(ps, PauliBasis("ZZZI"))
+        @test !haskey(ps, PauliBasis("XXXI"))
+        @test !haskey(ps, PauliBasis("ZZZZ"))
+        # Low-weight terms kept
+        @test haskey(ps, PauliBasis("ZIII"))
+        # Identity has absorbed diagonal high-weight contributions (+0.3 + 0.1)
+        @test ps[PauliBasis("IIII")] ≈ 1.0 + 0.3 + 0.1
+    end
+
+    @testset "MF redirects with non-trivial reference" begin
+        # Néel-style reference: |0101⟩ gives ⟨Z_i⟩ = +1,-1,+1,-1
+        N = 4
+        ψ = Ket(N, Int128(0b1010))  # bits 2, 4 set ⇒ sites 2,4 are |1⟩
+        ps = PauliSum(N, ComplexF64)
+        ps[PauliBasis("ZZII")] = 0.4 + 0im   # ⟨Z₁Z₂⟩ = (+1)(-1) = -1, weight 2
+        ps[PauliBasis("ZIZI")] = 0.2 + 0im   # ⟨Z₁Z₃⟩ = (+1)(+1) = +1, weight 2
+        ps[PauliBasis("XIII")] = 0.5 + 0im   # off-diagonal, weight 1 — kept
+        e_before = expectation_value(ps, ψ)
+        truncate!(ps, WeightTruncationMF(1, ψ))
+        e_after = expectation_value(ps, ψ)
+        @test e_before ≈ e_after
+        # Identity should absorb 0.4·(-1) + 0.2·(+1) = -0.2
+        id = PauliBasis(repeat("I", N))
+        @test ps[id] ≈ -0.2
+    end
+
     @testset "Default convenience constructors" begin
         @test CoeffTruncation().thresh == 1e-6
         @test StochasticCoeffTruncation(0.1).epsilon == 0.1

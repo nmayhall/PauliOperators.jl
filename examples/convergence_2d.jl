@@ -31,72 +31,6 @@ using PauliOperators
 using LinearAlgebra
 using Printf
 
-# Bring _apply! into scope so we can add methods to it here (not exported).
-import PauliOperators: _apply!
-
-
-# ── Experimental: CoeffTruncation with mean-field redirect ──────────────────
-#
-# Like CoeffTruncation(ε), but when a term c·P is dropped (|c| ≤ ε), instead
-# of setting it to zero we redirect it to its expectation value on |ψ⟩:
-#
-#     c · P   →   c · ⟨ψ|P|ψ⟩ · I
-#
-# For a computational-basis reference, ⟨ψ|P|ψ⟩ is 0 unless P is diagonal
-# (no X/Y content), in which case it is ±1 — essentially free to evaluate.
-# Preserves ⟨ψ|O|ψ⟩ exactly at the moment of truncation (diff is absorbed
-# into the identity coefficient).
-struct CoeffTruncationMF{N} <: TruncationStrategy
-    thresh::Float64
-    reference::Ket{N}
-end
-
-function _apply!(O::PauliSum{N,T}, s::CoeffTruncationMF{N}) where {N,T}
-    id_key = PauliBasis{N}(Int128(0), Int128(0))
-    id_accum = zero(T)
-    for (p, c) in collect(O)        # collect to iterate over a snapshot
-        p == id_key && continue
-        if abs(c) <= s.thresh
-            id_accum += c * expectation_value(p, s.reference)
-            delete!(O, p)
-        end
-    end
-    if id_accum != zero(T)
-        O[id_key] = get(O, id_key, zero(T)) + id_accum
-    end
-    return O
-end
-
-
-# ── Experimental: WeightTruncation with mean-field redirect ─────────────────
-#
-# Like WeightTruncation(k), but terms with weight > k are redirected to their
-# expectation value on |ψ⟩ rather than dropped:
-#
-#     c · P   →   c · ⟨ψ|P|ψ⟩ · I      (for weight(P) > k)
-#
-# Preserves ⟨ψ|O|ψ⟩ exactly at the moment of truncation.
-struct WeightTruncationMF{N} <: TruncationStrategy
-    max_weight::Int
-    reference::Ket{N}
-end
-
-function _apply!(O::PauliSum{N,T}, s::WeightTruncationMF{N}) where {N,T}
-    id_key = PauliBasis{N}(Int128(0), Int128(0))
-    id_accum = zero(T)
-    for (p, c) in collect(O)
-        p == id_key && continue
-        if weight(p) > s.max_weight
-            id_accum += c * expectation_value(p, s.reference)
-            delete!(O, p)
-        end
-    end
-    if id_accum != zero(T)
-        O[id_key] = get(O, id_key, zero(T)) + id_accum
-    end
-    return O
-end
-
 
 # ── Lattice helpers ──────────────────────────────────────────────────────────
 
@@ -179,7 +113,7 @@ function build_sweep(ψ::Ket{N}) where {N}
                                 CoeffTruncation(ε)))
     end
 
-    # CoeffTruncationMF (experimental — defined above): tightness = -log10(ε)
+    # CoeffTruncationMF: tightness = -log10(ε)
     for ε in (1e-3, 1e-4, 1e-5)
         push!(sweep, SweepEntry("coeff_mf", "CoeffMF(ε=$(ε))", -log10(ε),
                                 CoeffTruncationMF(ε, ψ)))
@@ -191,7 +125,7 @@ function build_sweep(ψ::Ket{N}) where {N}
             CompositeTruncation(WeightTruncation(k), CoeffTruncation(1e-8))))
     end
 
-    # WeightTruncationMF (experimental — defined above): tightness = k
+    # WeightTruncationMF: tightness = k
     for k in 1:4
         push!(sweep, SweepEntry("weight_mf", "WeightMF(k=$k)", float(k),
             CompositeTruncation(WeightTruncationMF(k, ψ), CoeffTruncation(1e-8))))
@@ -212,7 +146,7 @@ end
 function main()
     # Lattice — tweak freely; 4×4 (N=16) is well beyond exact reach (2^16=65536)
     # but still light for Heisenberg-picture Trotter at modest truncation.
-    Lx, Ly = 4, 4
+    Lx, Ly = 3, 4
     N      = Lx * Ly
     Jxy    = .10
     Jz     = 1.0
@@ -320,9 +254,9 @@ try
 
     # ---- p1a/p1b/p1c/p1d: ⟨O(t)⟩ — one subplot per strategy ----
     title_of = Dict("coeff"     => "CoeffTruncation",
-                    "coeff_mf"  => "CoeffTruncationMF (experimental)",
+                    "coeff_mf"  => "CoeffTruncationMF",
                     "weight"    => "WeightTruncation",
-                    "weight_mf" => "WeightTruncationMF (experimental)",
+                    "weight_mf" => "WeightTruncationMF",
                     "mf"        => "MeanFieldTruncation")
     strategy_panels = Any[]
     for name in ("coeff", "coeff_mf", "weight", "weight_mf", "mf")

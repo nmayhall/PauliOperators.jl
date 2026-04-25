@@ -71,6 +71,7 @@ module PauliOperators
     export StochasticCoeffTruncation, StochasticSamplingTruncation
     export AdaptiveTruncation
     export MeanFieldTruncation
+    export CoeffTruncationMF, WeightTruncationMF
     export NoCorrection, EnergyCorrection, EnergyVarianceCorrection
     export truncate!
     export mean_field_factorize, mean_field_factorize!

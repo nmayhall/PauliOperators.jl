@@ -176,6 +176,12 @@ strat = CompositeTruncation(s1, s2, ...)  # Apply multiple strategies in sequenc
 strat = StochasticCoeffTruncation(ε)      # Randomly round small coefficients
 strat = StochasticSamplingTruncation(k)   # Importance-sample to k terms
 
+# Mean-field-aware strategies (preserve ⟨ψ|O|ψ⟩ exactly at truncation time)
+strat = MeanFieldTruncation(k, ψ)         # Replace high-weight terms by their
+                                          # order-k mean-field factorization around ψ
+strat = CoeffTruncationMF(1e-6, ψ)        # Drop |c| ≤ thresh, redirect c·P → c·⟨ψ|P|ψ⟩·I
+strat = WeightTruncationMF(k, ψ)          # Drop weight > k, redirect c·P → c·⟨ψ|P|ψ⟩·I
+
 # Apply truncation (in-place)
 truncate!(O, strat)
 

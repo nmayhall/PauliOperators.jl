@@ -113,6 +113,38 @@ struct MeanFieldTruncation{N} <: TruncationStrategy
     reference::Ket{N}
 end
 
+"""
+    CoeffTruncationMF(thresh::Float64, reference::Ket{N})
+
+Like [`CoeffTruncation`](@ref), but when a term `c · P` is dropped (|c| ≤ `thresh`)
+it is redirected to its expectation value on `reference` rather than discarded:
+
+    c · P   →   c · ⟨ψ|P|ψ⟩ · I
+
+For a computational-basis reference `ψ`, `⟨ψ|P|ψ⟩` is `0` unless `P` is diagonal
+(no X/Y content), in which case it is `±1`. The diff is absorbed into the
+identity coefficient, preserving `⟨ψ|O|ψ⟩` exactly at the moment of truncation.
+"""
+struct CoeffTruncationMF{N} <: TruncationStrategy
+    thresh::Float64
+    reference::Ket{N}
+end
+
+"""
+    WeightTruncationMF(max_weight::Int, reference::Ket{N})
+
+Like [`WeightTruncation`](@ref), but terms with weight > `max_weight` are
+redirected to their expectation value on `reference` rather than dropped:
+
+    c · P   →   c · ⟨ψ|P|ψ⟩ · I        (for weight(P) > max_weight)
+
+Preserves `⟨ψ|O|ψ⟩` exactly at the moment of truncation.
+"""
+struct WeightTruncationMF{N} <: TruncationStrategy
+    max_weight::Int
+    reference::Ket{N}
+end
+
 
 # ============================================================
 # _apply! — raw truncation dispatch (internal)
@@ -184,6 +216,38 @@ end
 
 function _apply!(O::PauliSum{N,T}, s::MeanFieldTruncation{N}) where {N,T}
     return mean_field_factorize!(O, s.reference, s.max_weight)
+end
+
+function _apply!(O::PauliSum{N,T}, s::CoeffTruncationMF{N}) where {N,T}
+    id_key = PauliBasis{N}(Int128(0), Int128(0))
+    id_accum = zero(T)
+    for (p, c) in collect(O)
+        p == id_key && continue
+        if abs(c) <= s.thresh
+            id_accum += c * expectation_value(p, s.reference)
+            delete!(O, p)
+        end
+    end
+    if id_accum != zero(T)
+        O[id_key] = get(O, id_key, zero(T)) + id_accum
+    end
+    return O
+end
+
+function _apply!(O::PauliSum{N,T}, s::WeightTruncationMF{N}) where {N,T}
+    id_key = PauliBasis{N}(Int128(0), Int128(0))
+    id_accum = zero(T)
+    for (p, c) in collect(O)
+        p == id_key && continue
+        if weight(p) > s.max_weight
+            id_accum += c * expectation_value(p, s.reference)
+            delete!(O, p)
+        end
+    end
+    if id_accum != zero(T)
+        O[id_key] = get(O, id_key, zero(T)) + id_accum
+    end
+    return O
 end
 
 

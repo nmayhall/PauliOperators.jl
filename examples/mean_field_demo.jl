@@ -35,7 +35,7 @@ function heisenberg_1d(N::Int; J::Real=1.0)
     for i in 1:(N-1)
         H[PauliBasis(Pauli(N; X=[i, i+1]))] = .1J + 0im
         H[PauliBasis(Pauli(N; Y=[i, i+1]))] = .1J + 0im
-        H[PauliBasis(Pauli(N; Z=[i, i+1]))] = 2J + 0im
+        H[PauliBasis(Pauli(N; Z=[i, i+1]))] = 1J + 0im
     end
     return H
 end
@@ -102,7 +102,7 @@ function main()
     N      = 10 
     J      = 1.0
     dt     = 0.04
-    T_max  = 4.0
+    T_max  = 10.0
     times  = collect(0.0:dt:T_max)
     k_max  = 3
     obs_site = 1
@@ -122,7 +122,7 @@ function main()
     # mul!(O, 1/norm(O))
 
     println("=" ^ 82)
-    println("  1D Heisenberg | N=$N sites, J=$J, ψ=|111000⟩, observable Z_$obs_site")
+    println("  1D Heisenberg | N=$N sites, J=$J, ψ=$ψ, observable Z_$obs_site")
     println("  dt=$dt, T=$T_max, truncation weight k=$k_max")
     println("=" ^ 82)
     println()
@@ -131,15 +131,15 @@ function main()
     @time ev_exact, var_exact = exact_ev_curve(H, O, ψ, times)
 
     print("  trotter, no truncation...               ")
-    @time ev_tr, var_tr, nt_tr = trotter_ev_curve(H, O, ψ, times, dt, CoeffTruncation(1e-4))
+    @time ev_tr, var_tr, nt_tr = trotter_ev_curve(H, O, ψ, times, dt, CoeffTruncation(1e-8))
 
     print("  trotter + weight(k=$k_max)...                 ")
     @time ev_wt, var_wt, nt_wt = trotter_ev_curve(H, O, ψ, times, dt,
-        CompositeTruncation(WeightTruncation(k_max), CoeffTruncation(1e-5)))
+        CompositeTruncation(WeightTruncation(k_max), CoeffTruncation(1e-8)))
 
     print("  trotter + mean-field(k=$k_max, ψ)...          ")
     @time ev_mf, var_mf, nt_mf = trotter_ev_curve(H, O, ψ, times, dt,
-        CompositeTruncation(MeanFieldTruncation(k_max, ψ), CoeffTruncation(1e-5)))
+        CompositeTruncation(MeanFieldTruncation(k_max, ψ), CoeffTruncation(1e-8)))
 
     println()
     @printf("  %5s  %+10s  %+10s  %+10s  %+10s    %5s %5s %5s\n",

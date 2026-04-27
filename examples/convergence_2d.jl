@@ -125,12 +125,6 @@ function build_sweep(ψ::Ket{N}) where {N}
             CompositeTruncation(WeightTruncation(k), CoeffTruncation(1e-8))))
     end
 
-    # WeightTruncationMF: tightness = k
-    for k in 1:4
-        push!(sweep, SweepEntry("weight_mf", "WeightMF(k=$k)", float(k),
-            CompositeTruncation(WeightTruncationMF(k, ψ), CoeffTruncation(1e-8))))
-    end
-
     # MeanFieldTruncation: tightness = k
     for k in 1:4
         push!(sweep, SweepEntry("mf", "MF(k=$k)", float(k),
@@ -146,10 +140,10 @@ end
 function main()
     # Lattice — tweak freely; 4×4 (N=16) is well beyond exact reach (2^16=65536)
     # but still light for Heisenberg-picture Trotter at modest truncation.
-    Lx, Ly = 3, 4
+    Lx, Ly = 3, 3
     N      = Lx * Ly
-    Jxy    = .10
-    Jz     = 1.0
+    Jxy    = 0.2
+    Jz     = 0.4
     dt     = 0.02
     T_max  = 4.0
     times  = collect(0.0:dt:T_max)
@@ -173,8 +167,22 @@ function main()
     println("=" ^ 82)
     println("  2D Heisenberg | $(Lx)×$(Ly) lattice (N=$N), Jxy=$Jxy, Jz=$Jz")
     println("  observable: Z_$(obs_site) on Néel reference, dt=$dt, T=$T_max")
-    println("  (no dense reference — convergence by tightening thresholds)")
     println("=" ^ 82)
+
+    # ── Exact diagonalization reference ──────────────────────────────────────
+    print("\n  Exact diagonalization reference (N=$N, dim=$(2^N))... ")
+    t0 = time()
+    Hmat = Matrix(H)
+    Omat = Matrix(O)
+    F = eigen(Hermitian(Hmat))
+    ψvec = ComplexF64.(Vector(ψ))
+    ψ0_eig = F.vectors' * ψvec
+    exact_curve = zeros(Float64, length(times))
+    for (i, t) in enumerate(times)
+        ψt = F.vectors * (cis.(-F.values .* t) .* ψ0_eig)
+        exact_curve[i] = real(dot(ψt, Omat * ψt))
+    end
+    @printf("done (%.2fs)\n", time() - t0)
 
     sweep = build_sweep(ψ)
 
@@ -199,7 +207,7 @@ function main()
     # strategy. The tightest entry itself registers 0 by construction.
     self_err = zeros(Float64, length(sweep))
     tightest_idx = Dict{String,Int}()
-    for name in ("coeff", "coeff_mf", "weight", "weight_mf", "mf")
+    for name in ("coeff", "coeff_mf", "weight", "mf")
         idxs = findall(s -> s.name == name, sweep)
         tight = idxs[argmax([sweep[i].tightness for i in idxs])]
         tightest_idx[name] = tight
@@ -210,7 +218,7 @@ function main()
     end
 
     println("\n  Within-strategy self-convergence (vs tightest of same strategy):")
-    for name in ("coeff", "coeff_mf", "weight", "weight_mf", "mf")
+    for name in ("coeff", "coeff_mf", "weight", "mf")
         idxs = findall(s -> s.name == name, sweep)
         println("    $(uppercase(name)):")
         for i in idxs
@@ -222,7 +230,7 @@ function main()
 
     # ── Cross-strategy agreement (tightest vs tightest) ─────────────────────
     println("\n  Cross-strategy agreement at tightest settings:")
-    names = ("coeff", "coeff_mf", "weight", "weight_mf", "mf")
+    names = ("coeff", "coeff_mf", "weight", "mf")
     for a in 1:length(names), b in (a+1):length(names)
         ia = tightest_idx[names[a]]
         ib = tightest_idx[names[b]]
@@ -234,7 +242,7 @@ function main()
 
     return (times=times, sweep=sweep, curves=curves, nterms=nterms,
             avg_n=avg_n, self_err=self_err, tightest_idx=tightest_idx,
-            Lx=Lx, Ly=Ly, obs_site=obs_site)
+            exact=exact_curve, Lx=Lx, Ly=Ly, obs_site=obs_site)
 end
 
 
@@ -245,25 +253,26 @@ results = main()
 try
     using Plots
 
-    color_of  = Dict("coeff" => :darkgreen, "coeff_mf"  => :purple,
-                     "weight" => :red,       "weight_mf" => :orange,
-                     "mf"     => :blue)
-    marker_of = Dict("coeff" => :diamond,    "coeff_mf"  => :utriangle,
-                     "weight" => :circle,    "weight_mf" => :dtriangle,
-                     "mf"     => :square)
+    color_of  = Dict("coeff" => :darkgreen, "coeff_mf" => :purple,
+                     "weight" => :red,       "mf"       => :blue)
+    marker_of = Dict("coeff" => :diamond,    "coeff_mf" => :utriangle,
+                     "weight" => :circle,    "mf"       => :square)
 
     # ---- p1a/p1b/p1c/p1d: ⟨O(t)⟩ — one subplot per strategy ----
-    title_of = Dict("coeff"     => "CoeffTruncation",
-                    "coeff_mf"  => "CoeffTruncationMF",
-                    "weight"    => "WeightTruncation",
-                    "weight_mf" => "WeightTruncationMF",
-                    "mf"        => "MeanFieldTruncation")
+    title_of = Dict("coeff"    => "CoeffTruncation",
+                    "coeff_mf" => "CoeffTruncationMF",
+                    "weight"   => "WeightTruncation",
+                    "mf"       => "MeanFieldTruncation")
     strategy_panels = Any[]
-    for name in ("coeff", "coeff_mf", "weight", "weight_mf", "mf")
+    for name in ("coeff", "coeff_mf", "weight", "mf")
         p = plot(xlabel="t", ylabel="⟨ψ| Z_$(results.obs_site)(t) |ψ⟩",
                  title=title_of[name],
                  legend=:outerright, legendfontsize=6,
-                 ylims=(0.9, 1.1))
+                #  ylims=(0.9, 1.1),
+                 ylims=(-1.0, 1.0),
+                 )
+        plot!(p, results.times, results.exact,
+              label="exact", color=:black, lw=1.5, ls=:dash)
         idxs = findall(s -> s.name == name, results.sweep)
         tightness = [results.sweep[i].tightness for i in idxs]
         tmin, tmax = extrema(tightness)
@@ -280,7 +289,7 @@ try
     p3 = plot(xlabel="t", ylabel="# Pauli terms",
               title="Operator size over time (tightest run per strategy)",
               yscale=:log10, legend=:bottomright)
-    for name in ("coeff", "coeff_mf", "weight", "weight_mf", "mf")
+    for name in ("coeff", "coeff_mf", "weight", "mf")
         i = results.tightest_idx[name]
         plot!(p3, results.times, results.nterms[i],
               label=results.sweep[i].label,
@@ -288,7 +297,7 @@ try
               marker=marker_of[name], ms=3, msw=0.3)
     end
 
-    fig = plot(strategy_panels..., p3, layout=(6, 1), size=(1000, 2000))
+    fig = plot(strategy_panels..., p3, layout=(5, 1), size=(1000, 1700))
     outfile = joinpath(@__DIR__, "convergence_2d.pdf")
     savefig(fig, outfile)
     println("  Plot saved to: $outfile")

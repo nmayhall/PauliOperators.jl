@@ -28,6 +28,7 @@ module PauliOperators
     include("decompose.jl")
     include("gates.jl")
     include("analysis.jl")
+    include("channels.jl")
 
     const ⊗ = otimes
     const ⊕ = osum
@@ -85,4 +86,14 @@ module PauliOperators
     export get_weight_counts, get_weight_probs
     export get_majorana_weight_counts, get_majorana_weight_probs
     export find_top_k, largest, largest_diag
+
+    # Channels
+    export AbstractQuantumChannel
+    export pauli_channel,           pauli_channel!
+    export depolarizing_channel,    depolarizing_channel!
+    export dephasing_channel,       dephasing_channel!
+    export phase_flip_channel,      phase_flip_channel!
+    export bit_flip_channel,        bit_flip_channel!
+    export bit_phase_flip_channel,  bit_phase_flip_channel!
+    export depolarizing_p_for_weight_decay
 end

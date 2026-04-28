@@ -1,0 +1,208 @@
+"""
+    AbstractQuantumChannel
+
+Forward-compatibility supertype for quantum channels acting on `PauliSum`s.
+The current implementation provides only top-level functions for single-qubit
+Pauli channels (depolarizing, dephasing/phase-flip, bit-flip, bit-phase-flip,
+plus a general `pauli_channel!`). Future channel types (generic Kraus,
+amplitude damping, Lindblad, …) will subtype this and dispatch on a uniform
+`apply_channel!` method.
+"""
+abstract type AbstractQuantumChannel end
+
+
+@inline _qubit_mask(N::Int, ::Nothing) = N == 0 ? Int128(0) : (Int128(1) << N) - Int128(1)
+
+@inline function _qubit_mask(N::Int, q::Integer)
+    1 ≤ q ≤ N || throw(ArgumentError("qubit index $q out of range 1:$N"))
+    return Int128(1) << (q - 1)
+end
+
+function _qubit_mask(N::Int, qs)
+    m = Int128(0)
+    for q in qs
+        1 ≤ q ≤ N || throw(ArgumentError("qubit index $q out of range 1:$N"))
+        m |= Int128(1) << (q - 1)
+    end
+    return m
+end
+
+@inline function _check_inplace_eltype(::Type{T}) where {T}
+    if T <: Integer
+        throw(ArgumentError(
+            "In-place channel application requires a non-Integer coefficient " *
+            "type (got $T). Use the allocating variant or convert the PauliSum first."))
+    end
+    return nothing
+end
+
+
+"""
+    pauli_channel!(O::PauliSum{N}, pX, pY, pZ; qubits=nothing) -> O
+
+Apply (in place) the Heisenberg-picture single-qubit Pauli channel
+`E(ρ) = pI·ρ + pX·XρX + pY·YρY + pZ·ZρZ` independently to each qubit in
+`qubits` (default: all `1:N`), where `pI = 1 - pX - pY - pZ`.
+
+The channel is diagonal in the Pauli basis: each `PauliBasis` term `Q` is
+scaled by `∏_{i ∈ qubits} λ_{Q_i}`, with
+
+    λ_I = 1
+    λ_X = 1 - 2(pY + pZ)
+    λ_Y = 1 - 2(pX + pZ)
+    λ_Z = 1 - 2(pX + pY)
+
+`qubits` accepts `nothing`, an `Integer`, or any iterable of integer qubit
+indices (e.g. `Vector`, `Tuple`, `UnitRange`).
+
+Throws `ArgumentError` if any of `pX,pY,pZ` is negative or if their sum
+exceeds 1.
+"""
+function pauli_channel!(O::PauliSum{N,T}, pX::Real, pY::Real, pZ::Real;
+                        qubits=nothing) where {N,T}
+    _check_inplace_eltype(T)
+    (pX ≥ 0 && pY ≥ 0 && pZ ≥ 0) || throw(ArgumentError("probabilities must be non-negative (got pX=$pX, pY=$pY, pZ=$pZ)"))
+    pX + pY + pZ ≤ 1 + 4*eps(Float64) || throw(ArgumentError("pX+pY+pZ must be ≤ 1 (got $(pX+pY+pZ))"))
+
+    M = _qubit_mask(N, qubits)
+    λX = 1 - 2*(pY + pZ)
+    λY = 1 - 2*(pX + pZ)
+    λZ = 1 - 2*(pX + pY)
+
+    for (P, c) in O
+        xM = P.x & M
+        zM = P.z & M
+        nX = count_ones(xM & ~P.z)
+        nY = count_ones(xM &  P.z)
+        nZ = count_ones(zM & ~P.x)
+        O[P] = c * λX^nX * λY^nY * λZ^nZ
+    end
+    return O
+end
+
+pauli_channel(O::PauliSum, pX::Real, pY::Real, pZ::Real; kwargs...) =
+    pauli_channel!(deepcopy(O), pX, pY, pZ; kwargs...)
+
+
+"""
+    depolarizing_channel!(O::PauliSum{N}, p; qubits=nothing) -> O
+
+Apply (in place) the i.i.d. single-qubit depolarizing channel with
+parameter `p ∈ [0,1]`, in the Heisenberg picture. Convention:
+`pI = 1-p`, `pX = pY = pZ = p/3`. Equivalent to scaling each Pauli `P`
+by `(1 - 4p/3)^w`, where `w` is the number of non-identity qubits of `P`
+within `qubits`.
+
+# Weight-decay equivalence
+
+Applied to all qubits, this realizes the CPTP map
+`O ↦ Σ_P exp(-γΔt·w(P)) ⟨P,O⟩ P / d` for any `γ,Δt ≥ 0` by choosing
+`p = (3/4)·(1 - exp(-γΔt))` (see `depolarizing_p_for_weight_decay`). A
+*thresholded* weight damper of the form "only damp when w > lmax" is
+**not CPTP in general** and is intentionally not provided here.
+"""
+function depolarizing_channel!(O::PauliSum{N,T}, p::Real; qubits=nothing) where {N,T}
+    _check_inplace_eltype(T)
+    0 ≤ p ≤ 1 || throw(ArgumentError("depolarizing parameter p=$p must be in [0,1]"))
+    M = _qubit_mask(N, qubits)
+    λ = 1 - 4p/3
+    for (P, c) in O
+        k = count_ones((P.z | P.x) & M)
+        O[P] = c * λ^k
+    end
+    return O
+end
+
+depolarizing_channel(O::PauliSum, p::Real; kwargs...) =
+    depolarizing_channel!(deepcopy(O), p; kwargs...)
+
+
+"""
+    dephasing_channel!(O::PauliSum{N}, p; qubits=nothing) -> O
+
+Apply (in place) the i.i.d. single-qubit dephasing (phase-flip) channel
+with probability `p ∈ [0,1]`: `ρ ↦ (1-p)ρ + p·ZρZ`. Suppresses `X` and
+`Y` Pauli letters by `(1 - 2p)` per qubit.
+
+Aliased as `phase_flip_channel!`.
+"""
+function dephasing_channel!(O::PauliSum{N,T}, p::Real; qubits=nothing) where {N,T}
+    _check_inplace_eltype(T)
+    0 ≤ p ≤ 1 || throw(ArgumentError("dephasing parameter p=$p must be in [0,1]"))
+    M = _qubit_mask(N, qubits)
+    λ = 1 - 2p
+    for (P, c) in O
+        k = count_ones(P.x & M)
+        O[P] = c * λ^k
+    end
+    return O
+end
+
+dephasing_channel(O::PauliSum, p::Real; kwargs...) =
+    dephasing_channel!(deepcopy(O), p; kwargs...)
+
+const phase_flip_channel!  = dephasing_channel!
+const phase_flip_channel   = dephasing_channel
+
+
+"""
+    bit_flip_channel!(O::PauliSum{N}, p; qubits=nothing) -> O
+
+Apply (in place) the i.i.d. single-qubit bit-flip channel with probability
+`p ∈ [0,1]`: `ρ ↦ (1-p)ρ + p·XρX`. Suppresses `Y` and `Z` Pauli letters
+by `(1 - 2p)` per qubit.
+"""
+function bit_flip_channel!(O::PauliSum{N,T}, p::Real; qubits=nothing) where {N,T}
+    _check_inplace_eltype(T)
+    0 ≤ p ≤ 1 || throw(ArgumentError("bit_flip parameter p=$p must be in [0,1]"))
+    M = _qubit_mask(N, qubits)
+    λ = 1 - 2p
+    for (P, c) in O
+        k = count_ones(P.z & M)
+        O[P] = c * λ^k
+    end
+    return O
+end
+
+bit_flip_channel(O::PauliSum, p::Real; kwargs...) =
+    bit_flip_channel!(deepcopy(O), p; kwargs...)
+
+
+"""
+    bit_phase_flip_channel!(O::PauliSum{N}, p; qubits=nothing) -> O
+
+Apply (in place) the i.i.d. single-qubit bit-phase-flip channel with
+probability `p ∈ [0,1]`: `ρ ↦ (1-p)ρ + p·YρY`. Suppresses `X` and `Z`
+Pauli letters by `(1 - 2p)` per qubit.
+"""
+function bit_phase_flip_channel!(O::PauliSum{N,T}, p::Real; qubits=nothing) where {N,T}
+    _check_inplace_eltype(T)
+    0 ≤ p ≤ 1 || throw(ArgumentError("bit_phase_flip parameter p=$p must be in [0,1]"))
+    M = _qubit_mask(N, qubits)
+    λ = 1 - 2p
+    for (P, c) in O
+        k = count_ones((P.x ⊻ P.z) & M)
+        O[P] = c * λ^k
+    end
+    return O
+end
+
+bit_phase_flip_channel(O::PauliSum, p::Real; kwargs...) =
+    bit_phase_flip_channel!(deepcopy(O), p; kwargs...)
+
+
+"""
+    depolarizing_p_for_weight_decay(rate, dt) -> Float64
+
+Return the depolarizing parameter `p` such that the i.i.d. depolarizing
+channel `depolarizing_channel!(O, p)` (applied to all qubits) scales each
+Pauli term `P` by `exp(-rate*dt · w(P))`, where `w(P)` is the number of
+non-identity qubits of `P`.
+
+This is the CPTP realization of exponential-in-weight damping. A
+*thresholded* weight damper (damp only when `w(P) > lmax`) is not CPTP in
+general — its implied multi-qubit Pauli probabilities have negative
+entries — and is intentionally not provided in this module.
+"""
+@inline depolarizing_p_for_weight_decay(rate::Real, dt::Real) =
+    (3/4) * (1 - exp(-rate*dt))

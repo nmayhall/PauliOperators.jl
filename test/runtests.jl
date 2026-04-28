@@ -13,4 +13,5 @@ using Test
     include("test_truncation.jl")
     include("test_evolution.jl")
     include("test_analysis.jl")
+    include("test_channels.jl")
 end

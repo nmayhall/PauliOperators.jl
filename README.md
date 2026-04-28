@@ -107,6 +107,7 @@ where the $z$ and $x$ strings are encoded as bitwise representations of `Int128`
   - `expectation_value(operator, state)` - compute expectation values
   - `matrix_element(bra, operator, ket)` - compute matrix elements
   - Conversion to dense matrix representations for verification
+- **Quantum Channels**: Heisenberg-picture single-qubit Pauli channels applied i.i.d. across qubits — `depolarizing_channel!`, `dephasing_channel!`/`phase_flip_channel!`, `bit_flip_channel!`, `bit_phase_flip_channel!`, and a general `pauli_channel!(O, pX, pY, pZ)`. Each is a single popcount per `PauliSum` term — no expansion of the sum.
 
 ## Quick Example
 ```julia
@@ -285,6 +286,45 @@ S = [Ket(N, 0), Ket(N, 1), Ket(N, 3)]  # subspace basis
 M = Matrix(O, S)     # M[i,j] = ⟨S[i]|O|S[j]⟩
 v = Vector(K, S)     # v[i] = K[S[i]]
 ```
+
+## Quantum Channels
+
+Single-qubit Pauli channels are applied i.i.d. across qubits in the Heisenberg picture, `O ↦ Σₖ Kₖ† O Kₖ`. Pauli channels are diagonal in the Pauli basis, so each `PauliBasis` term is rescaled by a closed-form factor — no new terms are produced.
+
+| Channel | Convention | Per-qubit factor on suppressed Paulis |
+| --- | --- | --- |
+| `depolarizing_channel!(O, p)` | `pI=1−p, pX=pY=pZ=p/3` | `1 − 4p/3` on X, Y, Z |
+| `dephasing_channel!(O, p)` (alias `phase_flip_channel!`) | `pI=1−p, pZ=p` | `1 − 2p` on X, Y |
+| `bit_flip_channel!(O, p)` | `pI=1−p, pX=p` | `1 − 2p` on Y, Z |
+| `bit_phase_flip_channel!(O, p)` | `pI=1−p, pY=p` | `1 − 2p` on X, Z |
+| `pauli_channel!(O, pX, pY, pZ)` | general | `λ_X = 1−2(pY+pZ)`, etc. |
+
+Each channel has an in-place form (`!`) and an allocating form (returns a new `PauliSum`). All accept a `qubits` keyword (default: all `1:N`) to restrict the action to a subset.
+
+```julia
+O = PauliSum(3)
+O[PauliBasis("XYZ")] = 1.0 + 0im
+O[PauliBasis("III")] = 1.0 + 0im
+
+depolarizing_channel!(O, 0.1)              # acts on all qubits
+dephasing_channel!(O, 0.05; qubits=[1, 3]) # acts only on qubits 1 and 3
+```
+
+The convention follows Nielsen-Chuang (Kraus probabilities). Note the consequences at the endpoints:
+
+- **Depolarizing**: `p = 3/4` is the fully-depolarizing point (X, Y, Z → 0); `p = 1` gives `λ = −1/3`.
+- **Dephasing / bit-flip / bit-phase-flip**: `p = 1/2` is the fully-decohering point (suppressed Paulis → 0); `p = 1` is unitary conjugation by Z / X / Y, which preserves magnitudes and only flips signs.
+
+### Weight-decay equivalence
+
+The i.i.d. depolarizing channel is exactly an exponential-in-weight CPTP damper. Apply
+
+```julia
+p = depolarizing_p_for_weight_decay(γ, Δt)   # = (3/4)·(1 − exp(−γ·Δt))
+depolarizing_channel!(O, p)
+```
+
+and each Pauli `P` is scaled by `exp(−γ·Δt · w(P))`, where `w(P)` is the number of non-identity qubits. (A *thresholded* weight damper of the form "only damp when `w > lmax`" is **not CPTP in general** and is intentionally not provided.)
 
 ## Performance
 

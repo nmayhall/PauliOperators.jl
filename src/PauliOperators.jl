@@ -29,6 +29,7 @@ module PauliOperators
     include("gates.jl")
     include("analysis.jl")
     include("channels.jl")
+    include("transformations.jl")
 
     const ⊗ = otimes
     const ⊕ = osum
@@ -96,4 +97,7 @@ module PauliOperators
     export bit_flip_channel,        bit_flip_channel!
     export bit_phase_flip_channel,  bit_phase_flip_channel!
     export depolarizing_p_for_weight_decay
+
+    # Transformations
+    export jordan_wigner, boson_to_paulis
 end

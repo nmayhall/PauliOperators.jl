@@ -217,8 +217,20 @@ function otimes(p1::PauliSum{N,T}, p2::PauliSum{M,T}) where {N,M,T}
     out = PauliSum(N+M, T)
     for (op1,coeff1) in p1
         for (op2,coeff2) in p2
-            out[op1 ⊗ op2] = coeff1 * coeff2 
+            out[op1 ⊗ op2] = coeff1 * coeff2
         end
     end
-    return out 
+    return out
+end
+
+"""
+    osum(p1::PauliSum{N,T}, p2::PauliSum{M,T}) where {N,M,T}
+
+Direct sum of two `PauliSum`s: `p1 ⊕ p2 = p1 ⊗ I_M + I_N ⊗ p2`,
+returning a `PauliSum{N+M, T}`.
+"""
+function osum(p1::PauliSum{N,T}, p2::PauliSum{M,T}) where {N,M,T}
+    I_N = PauliSum(N, T); I_N[PauliBasis{N}(Int128(0), Int128(0))] = one(T)
+    I_M = PauliSum(M, T); I_M[PauliBasis{M}(Int128(0), Int128(0))] = one(T)
+    return p1 ⊗ I_M + I_N ⊗ p2
 end

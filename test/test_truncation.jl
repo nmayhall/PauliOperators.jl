@@ -204,7 +204,9 @@ using Random
         @test StochasticCoeffTruncation(0.1).epsilon == 0.1
         @test StochasticSamplingTruncation(5).n_keep == 5
         @test AdaptiveTruncation(max_terms=100, min_thresh=1e-6).max_terms == 100
-        @test CompositeTruncation(NoTruncation(), CoeffTruncation(0.1)).strategies isa Vector{TruncationStrategy}
+        @test CompositeTruncation(NoTruncation(), CoeffTruncation(0.1)).strategies isa Tuple{NoTruncation, CoeffTruncation}
+        # Vector convenience constructor still works (converts to tuple internally)
+        @test CompositeTruncation([NoTruncation(), CoeffTruncation(0.1)]).strategies isa Tuple
     end
 
 end

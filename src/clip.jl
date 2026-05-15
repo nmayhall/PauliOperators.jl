@@ -7,41 +7,13 @@ function weight(p::PauliBasis)
     return count_ones(p.x | p.z)
 end
 
-
-# Internal: hoisted equivalent of `Base.filter!(pred, h::Dict)`.
-#
-# `Base.filter!` (in `dict.jl`) reloads `h.slots`, `h.keys`, and `h.vals` from
-# the Dict header on every iteration of the inner loop, because the compiler
-# cannot prove that `_delete!(h, i)` doesn't reallocate them. `_delete!` only
-# mutates the slot bytes in place, so the loads are loop-invariant in practice
-# — hoisting them removes a per-iteration `getproperty` (atomic-load) chain
-# that dominated profiling on hot truncation paths (~30 % of total runtime on
-# a Eagle-scale TFIM operator with several thousand terms).
-#
-# Behavior is bit-identical to `Base.filter!`. Used by `coeff_clip!`,
-# `weight_clip!`, `majorana_weight_clip!`, and the `KetSum` `coeff_clip!`.
-function _filter_dict_hoisted!(pred, h::Dict{K,V}) where {K,V}
-    h.count == 0 && return h
-    slots = h.slots
-    keys  = h.keys
-    vals  = h.vals
-    n     = length(slots)
-    @inbounds for i in 1:n
-        if (slots[i] & 0x80) != 0 && !pred(Pair{K,V}(keys[i], vals[i]))
-            Base._delete!(h, i)
-        end
-    end
-    return h
-end
-
-
 """
     coeff_clip!(ps::PauliSum{N}, thresh::Real)
 
 Remove Pauli terms with |coefficient| <= `thresh`.
 """
 function coeff_clip!(ps::PauliSum{N}, thresh::Real) where {N}
-    return _filter_dict_hoisted!(p->abs(p.second) > thresh, ps)
+    return filter!(p->abs(p.second) > thresh, ps)
 end
 
 """
@@ -58,7 +30,7 @@ clip!(ps::PauliSum; thresh=1e-16) = coeff_clip!(ps, thresh)
 Remove terms with Pauli weight above max_weight.
 """
 function weight_clip!(ps::PauliSum{N}, max_weight::Int) where {N}
-    return _filter_dict_hoisted!(p->weight(p.first) <= max_weight, ps)
+    return filter!(p->weight(p.first) <= max_weight, ps)
 end
 
 """
@@ -110,7 +82,7 @@ end
 Remove terms with Majorana weight above `max_weight`.
 """
 function majorana_weight_clip!(ps::PauliSum{N}, max_weight::Int) where {N}
-    return _filter_dict_hoisted!(p->majorana_weight(p.first) <= max_weight, ps)
+    return filter!(p->majorana_weight(p.first) <= max_weight, ps)
 end
 
 """
@@ -119,8 +91,7 @@ end
 Remove Ket terms with |coefficient| <= `thresh`.
 """
 function coeff_clip!(ks::KetSum{N}, thresh::Real) where {N}
-    # return filter!(p->abs(p.second) > thresh, ks)
-    return _filter_dict_hoisted!(p->abs(p.second) > thresh, ks)
+    return filter!(p->abs(p.second) > thresh, ks)
 end
 
 """

@@ -90,11 +90,19 @@ AdaptiveTruncation(; max_terms::Int=10000, min_thresh::Float64=1e-12) = Adaptive
     CompositeTruncation(strategies...)
 
 Apply multiple truncation strategies in sequence.
+
+Strategies are stored as a typed `Tuple` rather than `Vector{TruncationStrategy}`,
+so the per-element dispatches inside `_apply!` resolve at compile time and the
+inner `coeff_clip!` / `weight_clip!` calls inline. Constructing via the variadic
+form (`CompositeTruncation(CoeffTruncation(1e-4), WeightTruncation(5))`) is
+the supported call style; an `AbstractVector` constructor is also provided
+for convenience but converts to a tuple internally.
 """
-struct CompositeTruncation <: TruncationStrategy
-    strategies::Vector{TruncationStrategy}
+struct CompositeTruncation{S<:Tuple} <: TruncationStrategy
+    strategies::S
 end
-CompositeTruncation(s::TruncationStrategy...) = CompositeTruncation(collect(TruncationStrategy, s))
+CompositeTruncation(s::TruncationStrategy...) = CompositeTruncation(s)
+CompositeTruncation(v::AbstractVector{<:TruncationStrategy}) = CompositeTruncation(Tuple(v))
 
 
 # ============================================================
@@ -158,10 +166,13 @@ function _apply!(O::PauliSum{N}, s::AdaptiveTruncation) where N
     return O
 end
 
+# Recursive tail-pop iteration over the heterogeneous tuple of strategies so
+# each `_apply!(O, strategy)` resolves at compile time and inlines.
+@inline _apply_tup!(O, ::Tuple{}) = O
+@inline _apply_tup!(O, s::Tuple)  = (_apply!(O, first(s)); _apply_tup!(O, Base.tail(s)))
+
 function _apply!(O::PauliSum{N}, s::CompositeTruncation) where N
-    for strategy in s.strategies
-        _apply!(O, strategy)
-    end
+    _apply_tup!(O, s.strategies)
     return O
 end
 

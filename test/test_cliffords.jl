@@ -304,4 +304,114 @@ end
     @test Vector(cnot(k10, 1, 2))[4] ≈ 1.0 atol=1e-12
 end
 
+# Two matrices agree up to a global phase iff U₁ · U₂' is a scalar multiple of I.
+function agree_up_to_phase(A::AbstractMatrix, B::AbstractMatrix; atol=1e-10)
+    size(A) == size(B) || return false
+    M = A * B'
+    dim = size(M, 1)
+    α = tr(M) / dim
+    isapprox(abs(α), 1; atol=atol) || return false
+    return isapprox(M, α * Matrix{ComplexF64}(I, dim, dim); atol=atol)
+end
+
+@testset "Matrix(CliffordTableau{N})" begin
+    @testset "primitive matrices match analytic up to global phase" begin
+        N = 2
+        for (g, U1) in ((Hadamard(1),  H1q),
+                        (PhaseGate(1), S1q),
+                        (PhaseDg(1),   Sd1q),
+                        (PauliX(1),    X1q),
+                        (PauliY(1),    Y1q),
+                        (PauliZ(1),    Z1q),
+                        (SqrtX(1),     SqX1q),
+                        (SqrtY(1),     SqY1q))
+            U = Matrix(CliffordTableau{N}(g))
+            U_ref = lift1q(U1, 1, N)
+            @test agree_up_to_phase(U, U_ref)
+        end
+
+        for (g, U_ref) in ((CNOT(1, 2), CNOT4), (CZ(1, 2), CZ4), (SWAP(1, 2), SWAP4))
+            U = Matrix(CliffordTableau{2}(g))
+            @test agree_up_to_phase(U, U_ref)
+        end
+    end
+
+    @testset "Matrix is unitary" begin
+        for N in 2:4
+            for g in (Hadamard(1), CNOT(1, 2), PhaseGate(1))
+                U = Matrix(CliffordTableau{N}(g))
+                dim = 1 << N
+                @test isapprox(U * U', Matrix{ComplexF64}(I, dim, dim); atol=1e-10)
+            end
+        end
+    end
+
+    @testset "composition: Matrix(C1*C2) ≈ Matrix(C1)*Matrix(C2) up to phase" begin
+        N = 3
+        C1 = CliffordTableau{N}(Hadamard(2))
+        C2 = CliffordTableau{N}(CNOT(1, 2))
+        @test agree_up_to_phase(Matrix(C1 * C2), Matrix(C1) * Matrix(C2))
+
+        C3 = CliffordTableau{N}([Hadamard(1), CNOT(1, 2), PhaseGate(3)])
+        prod_matrix = Matrix(CliffordTableau{N}(PhaseGate(3))) *
+                      Matrix(CliffordTableau{N}(CNOT(1, 2))) *
+                      Matrix(CliffordTableau{N}(Hadamard(1)))
+        @test agree_up_to_phase(Matrix(C3), prod_matrix)
+    end
+
+    @testset "adjoint: Matrix(adjoint(C)) ≈ Matrix(C)' up to phase" begin
+        N = 3
+        C = CliffordTableau{N}([Hadamard(1), CNOT(1, 2), PhaseGate(3), CZ(2, 3)])
+        @test agree_up_to_phase(Matrix(adjoint(C)), Matrix(C)')
+    end
+end
+
+@testset "rand(CliffordTableau{N})" begin
+    @testset "result is a valid Clifford" begin
+        rng = Random.Xoshiro(42)
+        for N in 1:4
+            C = rand(rng, CliffordTableau{N})
+            # adjoint(C) * C must reduce to the identity tableau (Cliffords form a group;
+            # the adjoint-inversion code asserts the input is a valid Clifford internally).
+            @test adjoint(C) * C == CliffordTableau{N}()
+            @test C * adjoint(C) == CliffordTableau{N}()
+        end
+    end
+
+    @testset "dense matrix is unitary" begin
+        rng = Random.Xoshiro(7)
+        for N in 2:4
+            C = rand(rng, CliffordTableau{N})
+            U = Matrix(C)
+            dim = 1 << N
+            @test isapprox(U * U', Matrix{ComplexF64}(I, dim, dim); atol=1e-10)
+        end
+    end
+
+    @testset "reproducibility with fixed RNG" begin
+        rng1 = Random.Xoshiro(2024)
+        rng2 = Random.Xoshiro(2024)
+        @test rand(rng1, CliffordTableau{3}) == rand(rng2, CliffordTableau{3})
+    end
+
+    @testset "different seeds give different samples" begin
+        C1 = rand(Random.Xoshiro(1), CliffordTableau{4})
+        C2 = rand(Random.Xoshiro(2), CliffordTableau{4})
+        @test C1 != C2
+    end
+
+    @testset "PauliSum conjugation is consistent with the tableau" begin
+        # apply(C, P) must match the underlying tableau action: this is automatic for any
+        # CliffordTableau, but we check that random samples don't accidentally violate it.
+        rng = Random.Xoshiro(99)
+        N = 3
+        C = rand(rng, CliffordTableau{N})
+        for s in ("XYZ", "ZIX", "YYY")
+            P = PauliSum(Pauli(s))
+            U = Matrix(C)
+            @test isapprox(Matrix(apply(C, P)), U * Matrix(P) * U'; atol=1e-10)
+        end
+    end
+end
+
 end  # @testset "Cliffords"

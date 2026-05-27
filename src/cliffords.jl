@@ -200,6 +200,19 @@ function CliffordTableau{N}(gates::AbstractVector{<:CliffordGate}) where N
     return out
 end
 
+# Catch the common mistake of calling `CliffordTableau(g)` without the qubit
+# count — primitives don't carry N, so it has to be supplied explicitly.
+function CliffordTableau(g::CliffordGate)
+    throw(ArgumentError(
+        "CliffordTableau(g) needs the qubit count: write `CliffordTableau{N}(g)` " *
+        "(e.g. `CliffordTableau{3}(CNOT(1, 2))`)."))
+end
+function CliffordTableau(gates::AbstractVector{<:CliffordGate})
+    throw(ArgumentError(
+        "CliffordTableau(gates) needs the qubit count: write " *
+        "`CliffordTableau{N}(gates)`."))
+end
+
 # ------- Apply: CliffordTableau on PauliBasis --------------------------------
 
 """
@@ -298,6 +311,16 @@ end
 
 Base.:*(C1::CliffordTableau{N}, g2::CliffordGate) where N = C1 * CliffordTableau{N}(g2)
 Base.:*(g1::CliffordGate, C2::CliffordTableau{N}) where N = CliffordTableau{N}(g1) * C2
+
+# Two primitives can't be multiplied directly because the qubit count N isn't known.
+function Base.:*(g1::CliffordGate, g2::CliffordGate)
+    throw(ArgumentError(
+        "cannot compose two primitive CliffordGates with `*` because the qubit " *
+        "count N isn't known from the operands. Lift one to a tableau first: " *
+        "`CliffordTableau{N}(g1) * g2`, or build the full composition with " *
+        "`CliffordTableau{N}([g2, g1])` (gates listed in left-to-right order, " *
+        "i.e. g2 applied first)."))
+end
 
 # ------- Adjoint / inverse ---------------------------------------------------
 
@@ -543,6 +566,11 @@ function apply(g::SqrtY, ks::KetSum{N,T}) where {N,T}
     return out
 end
 
+# A bare `Ket` is promoted to a single-term `KetSum` for the primitive apply paths.
+# CliffordTableau on KetSum is not implemented; falls through to the generic error
+# defined at the top of the KetSum action section.
+apply(g::CliffordGate, k::Ket{N}) where N = apply(g, KetSum(k; T=ComplexF64))
+
 # ------- compose helper ------------------------------------------------------
 
 """
@@ -646,5 +674,123 @@ CliffordTableau{N}(U::AbstractMatrix; atol::Real=1e-8) where N =
         end
     end
     return out
+end
+
+# ------- Tableau → dense matrix ---------------------------------------------
+
+"""
+    Matrix(C::CliffordTableau{N}) -> Matrix{ComplexF64}
+
+Dense `2^N × 2^N` unitary realising `C` in the computational basis.
+
+The tableau encodes a Clifford only up to a global phase, so the returned matrix is
+unitary and matches `C` only **up to a single global phase factor**. For physical
+use (channels, expectation values, comparing two Cliffords via `U₁·U₂'` ≈ scalar `I`)
+this is sufficient.
+
+Cost is O(`2^N` · support(C|0⟩)) ≤ O(`4^N`). Practical for `N` up to ~10–12.
+"""
+function Base.Matrix(C::CliffordTableau{N}) where N
+    dim = 1 << N
+    ψ0 = _stabilizer_state_from_tableau(C, N)
+    U = zeros(ComplexF64, dim, dim)
+    for c in Int128(0):(Int128(dim) - Int128(1))
+        sgn, P_c = apply(C, PauliBasis{N}(Int128(0), c))
+        ψc = P_c * ψ0
+        for (k_, v_) in ψc
+            U[Int(k_.v) + 1, Int(c) + 1] = sgn * v_
+        end
+    end
+    return U
+end
+
+# Internal: compute C|0⟩ as a KetSum via iterated stabilizer projection.
+# Returns a unit-norm KetSum; the global phase is determined by the first reference
+# basis state that has nonzero overlap, fixing the one global-phase choice for `Matrix`.
+function _stabilizer_state_from_tableau(C::CliffordTableau{N}, n::Int) where N
+    paulis = Vector{PauliBasis{N}}(undef, n)
+    signs  = Vector{Int}(undef, n)
+    @inbounds for i in 1:n
+        paulis[i] = PauliBasis{N}(C.z_to_z[i], C.z_to_x[i])
+        signs[i]  = C.z_sign[i] ? -1 : 1
+    end
+    full = Int128(1) << n
+    @inbounds for v0 in Int128(0):(full - Int128(1))
+        ψ = _project_onto_stabilizers(paulis, signs, Ket{N}(v0), n)
+        if !isempty(ψ)
+            nrm = sqrt(sum(abs2, values(ψ)))
+            for k_ in keys(ψ)
+                ψ[k_] /= nrm
+            end
+            return ψ
+        end
+    end
+    error("Could not find a basis state with non-zero overlap with C|0⟩ — should not happen for a valid Clifford")
+end
+
+function _project_onto_stabilizers(paulis::Vector{PauliBasis{N}}, signs::Vector{Int},
+                                   ref::Ket{N}, n::Int) where N
+    ψ = KetSum(ref; T=ComplexF64)
+    half = ComplexF64(0.5)
+    @inbounds for i in 1:n
+        Pψ = paulis[i] * ψ
+        sgn = ComplexF64(signs[i])
+        new_ψ = KetSum(N; T=ComplexF64)
+        for (k_, v_) in ψ
+            new_ψ[k_] = get(new_ψ, k_, zero(ComplexF64)) + v_ * half
+        end
+        for (k_, v_) in Pψ
+            new_ψ[k_] = get(new_ψ, k_, zero(ComplexF64)) + sgn * v_ * half
+        end
+        for k_ in collect(keys(new_ψ))
+            if abs(new_ψ[k_]) < 1e-14
+                delete!(new_ψ, k_)
+            end
+        end
+        ψ = new_ψ
+        isempty(ψ) && return ψ
+    end
+    return ψ
+end
+
+# ------- Random Clifford sampling -------------------------------------------
+
+"""
+    rand([rng,] CliffordTableau{N}; depth=max(200, 20*N^2)) -> CliffordTableau{N}
+
+Sample a random N-qubit Clifford as a `CliffordTableau`. The current implementation
+composes `depth` uniformly-chosen primitive gates (`Hadamard`, `PhaseGate`, `PhaseDg`,
+`CNOT` on random qubits) and then samples uniform random sign bits. With sufficient
+depth this **approximates** the uniform distribution over the Clifford group
+(the random walk mixes quickly), but is not provably uniform.
+
+For applications requiring provable uniformity (e.g. randomized benchmarking,
+unitary t-design protocols), a Bravyi-Maslov sampler would be preferable; this is a
+straightforward extension to implement on top of the current building blocks.
+"""
+Base.rand(::Type{CliffordTableau{N}}; depth::Integer=max(200, 20 * N * N)) where N =
+    rand(Random.default_rng(), CliffordTableau{N}; depth=depth)
+
+function Base.rand(rng::AbstractRNG, ::Type{CliffordTableau{N}};
+                   depth::Integer=max(200, 20 * N * N)) where N
+    N >= 1 || throw(ArgumentError("N must be ≥ 1"))
+    C = CliffordTableau{N}()
+    one_qubit_kinds = (Hadamard, PhaseGate, PhaseDg)
+    for _ in 1:depth
+        # For N == 1 we can only apply single-qubit gates.
+        if N == 1 || rand(rng) < 0.5
+            kind = one_qubit_kinds[rand(rng, 1:3)]
+            q = rand(rng, 1:N)
+            C = CliffordTableau{N}(kind(q)) * C
+        else
+            c = rand(rng, 1:N)
+            t = rand(rng, 1:N-1)
+            t += t >= c ? 1 : 0   # ensures t != c
+            C = CliffordTableau{N}(CNOT(c, t)) * C
+        end
+    end
+    Random.rand!(rng, C.x_sign)
+    Random.rand!(rng, C.z_sign)
+    return C
 end
 

@@ -230,26 +230,103 @@ gens, angs = qdrift(H, dt; n_samples=100)
 ```
 
 ### Quantum gates
+
+Clifford gates act directly on the Pauli basis via a symplectic tableau (no Pauli rotations,
+no `cos`/`sin` branching). Every gate has a typed `CliffordGate` representation and a
+named-function alias. Both forms work on `PauliSum` (Heisenberg picture), `KetSum`
+(Schr&ouml;dinger picture), and a bare `Ket` (promoted to a single-term `KetSum`).
+
 ```julia
-# Clifford gates
-O = hadamard(O, qubit)
-O = cnot(O, control, target)
+# Named-function aliases (backwards-compatible)
+O = hadamard(O, q)
+O = cnot(O, ctrl, tgt)
+O = X_gate(O, q);  O = Y_gate(O, q);  O = Z_gate(O, q)
+O = S_gate(O, q)             # phase gate, diag(1, i)
+O = T_gate(O, q)             # not a Clifford; still rotation-based
 
-# Pauli gates
-O = X_gate(O, qubit)
-O = Y_gate(O, qubit)
-O = Z_gate(O, qubit)
-
-# Rotation gates
-O = S_gate(O, qubit)
-O = T_gate(O, qubit)
-
-# Get decomposition as (generators, angles) for custom sequences
-gens, angs = hadamard_to_paulis(N, qubit)
-gens, angs = cnot_to_paulis(N, control, target)
+# Equivalent typed gate objects (apply with `apply`)
+O = apply(Hadamard(q), O)
+O = apply(CNOT(ctrl, tgt), O)
+O = apply(PhaseGate(q), O)   # S      = diag(1,  i)
+O = apply(PhaseDg(q), O)     # S†     = diag(1, -i)
+O = apply(SqrtX(q), O)       # √X
+O = apply(SqrtY(q), O)       # √Y
+O = apply(CZ(ctrl, tgt), O)
+O = apply(SWAP(a, b), O)
 ```
 
-All gate functions work for both PauliSum (Heisenberg) and KetSum (Schr&ouml;dinger).
+#### Arbitrary N-qubit Cliffords via `CliffordTableau`
+
+`CliffordTableau{N}` stores a Clifford as its action on each generator (the Aaronson–Gottesman
+symplectic tableau) and applies it to a `PauliSum` in O(N) per Pauli term.
+
+```julia
+# Build a tableau from a primitive gate
+C = CliffordTableau{N}(Hadamard(2))
+
+# Build one from a sequence of primitives (applied left-to-right)
+C = CliffordTableau{N}([Hadamard(1), CNOT(1, 2), PhaseGate(3), CZ(2, 3)])
+
+# Compose two tableaux (C1 * C2 means "C2 first, then C1")
+C12 = C1 * C2
+
+# `*` requires at least one operand to be a CliffordTableau (so N is known).
+# Composing two primitives directly raises an error — lift one first:
+C = CliffordTableau{N}(CNOT(1, 2)) * Hadamard(1)
+# ...or list them in left-to-right (applied) order:
+C = CliffordTableau{N}([Hadamard(1), CNOT(1, 2)])
+
+# Invert
+Cinv = adjoint(C)
+
+# Apply to a PauliSum (Heisenberg) or to a single PauliBasis (returns sign, image)
+O = apply(C, O)
+sgn, p_image = apply(C, p::PauliBasis)
+```
+
+#### Random Cliffords and dense matrices
+
+```julia
+# Random N-qubit Clifford (approximately uniform — composes O(N²) random primitives)
+C = rand(CliffordTableau{4})
+C = rand(rng, CliffordTableau{4})                # with a fixed RNG for reproducibility
+C = rand(CliffordTableau{4}; depth=1000)         # increase depth for better uniformity
+
+# Dense 2^N × 2^N unitary realising the Clifford (up to a global phase).
+# Practical for N up to ~10–12; cost is O(4^N).
+U = Matrix(C)
+```
+
+The current `rand` is not provably uniform — it composes a random circuit of depth
+`O(N²)` and relies on rapid mixing of the random walk on the Clifford group. For
+applications that need strict uniformity (e.g. randomized benchmarking, t-design
+protocols), a Bravyi-Maslov sampler is a planned follow-up.
+
+#### Identifying a Clifford from its dense unitary
+
+For small blocks you can pass a 2<sup>K</sup>&times;2<sup>K</sup> unitary matrix
+and the target qubits; the tableau is identified by checking each generator's image
+against the list of Hermitian Paulis. Practical for K up to ~4.
+
+```julia
+# Identify a 1-qubit Clifford from its 2×2 matrix
+H_matrix = [1 1; 1 -1] / sqrt(2)
+C = CliffordTableau{1}(H_matrix)   # == CliffordTableau{1}(Hadamard(1))
+
+# Lift a small block onto target qubits of a larger system: this acts as CNOT
+# between qubits 3 and 7 of a 10-qubit system, no matter the layout in between.
+CNOT_4x4 = ComplexF64[1 0 0 0; 0 0 0 1; 0 0 1 0; 0 1 0 0]
+C = CliffordTableau{10}(CNOT_4x4, [3, 7])
+
+# Non-Clifford input is rejected
+T_matrix = [1 0; 0 exp(im*π/4)]
+CliffordTableau{1}(T_matrix)   # throws ArgumentError
+```
+
+In all cases, the same `apply(gate, ...)` interface is used; primitives accept `PauliSum`,
+`KetSum`, or `Ket` operands. Note: `apply(::CliffordTableau, ::KetSum)` (or `::Ket`) is **not**
+directly supported &mdash; apply the constituent primitive gates to the state instead
+(or decompose the tableau into primitives).
 
 ## Analysis Utilities
 

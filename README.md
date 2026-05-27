@@ -297,6 +297,24 @@ C = rand(CliffordTableau{4}; depth=1000)         # increase depth for better uni
 U = Matrix(C)
 ```
 
+#### Lifting a small Clifford onto target qubits of a larger system
+
+A common workflow (e.g. CAMPS): construct/sample a small Clifford on a 1- or 2-qubit
+block, then store and apply it inside a larger N-qubit operator.
+
+```julia
+# Sample a random 2-qubit Clifford
+c_local = rand(CliffordTableau{2})
+
+# Store it; later, lift onto qubits (a, b) of an N-qubit system and apply.
+c_big   = CliffordTableau{N}(c_local, [a, b])    # qubits 1,2 of c_local -> a,b of big
+ps_new  = apply(c_big, ps)                        # ps is a PauliSum{N}
+```
+
+The lift is exact: `CliffordTableau{N}(C_K, qs)` produces the same tableau you would
+get from `CliffordTableau{N}(Matrix(C_K), qs)`, but avoids the dense matrix step.
+Qubits not in `qs` are unaffected.
+
 The current `rand` is not provably uniform — it composes a random circuit of depth
 `O(N²)` and relies on rapid mixing of the random walk on the Clifford group. For
 applications that need strict uniformity (e.g. randomized benchmarking, t-design

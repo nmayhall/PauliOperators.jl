@@ -414,4 +414,61 @@ end
     end
 end
 
+@testset "Lift small CliffordTableau onto target qubits" begin
+    @testset "lifted primitive equals natively-constructed primitive" begin
+        # 2-qubit CNOT lifted onto various target pairs of a larger system
+        C2 = CliffordTableau{2}(CNOT(1, 2))
+        @test CliffordTableau{4}(C2, [1, 2]) == CliffordTableau{4}(CNOT(1, 2))
+        @test CliffordTableau{4}(C2, [3, 4]) == CliffordTableau{4}(CNOT(3, 4))
+        @test CliffordTableau{5}(C2, [2, 4]) == CliffordTableau{5}(CNOT(2, 4))
+
+        # Non-adjacent target qubits
+        @test CliffordTableau{6}(CliffordTableau{2}(SWAP(1, 2)), [1, 6]) ==
+              CliffordTableau{6}(SWAP(1, 6))
+
+        # Single-qubit lift
+        @test CliffordTableau{3}(CliffordTableau{1}(Hadamard(1)), [2]) ==
+              CliffordTableau{3}(Hadamard(2))
+    end
+
+    @testset "lift via tableau == lift via Matrix" begin
+        rng = Random.Xoshiro(7)
+        Csmall = rand(rng, CliffordTableau{2})
+        U = Matrix(Csmall)
+        for (N, qs) in ((4, [1, 2]), (4, [2, 3]), (5, [1, 5]), (6, [3, 4]))
+            @test CliffordTableau{N}(Csmall, qs) == CliffordTableau{N}(U, qs)
+        end
+    end
+
+    @testset "applied to PauliSum: only the targeted qubits move" begin
+        rng = Random.Xoshiro(123)
+        Csmall = rand(rng, CliffordTableau{2})
+        N = 5
+        qs = [2, 4]
+        Cbig = CliffordTableau{N}(Csmall, qs)
+
+        # A Pauli with support only on the OFF-target qubits must be untouched.
+        for s in ("XIZIY", "ZIIIZ", "IIIII")
+            P = PauliSum(Pauli(s))
+            sgn, p_out = apply(Cbig, PauliBasis(Pauli(s)))
+            @test sgn == 1
+            @test p_out == PauliBasis(Pauli(s))
+        end
+
+        # Larger PauliSum sanity: applying Cbig is a unitary action on PauliSum.
+        ps = PauliSum(Pauli("XYZXY")) + PauliSum(Pauli("ZZZZZ"))
+        ps_back = apply(adjoint(Cbig), apply(Cbig, ps))
+        @test Matrix(ps_back) ≈ Matrix(ps) atol=1e-12
+    end
+
+    @testset "validation" begin
+        Csmall = CliffordTableau{2}(CNOT(1, 2))
+        @test_throws DimensionMismatch CliffordTableau{4}(Csmall, [1])           # too few qubits
+        @test_throws DimensionMismatch CliffordTableau{4}(Csmall, [1, 2, 3])     # too many
+        @test_throws ArgumentError      CliffordTableau{4}(Csmall, [0, 2])       # out of range
+        @test_throws ArgumentError      CliffordTableau{4}(Csmall, [5, 2])       # out of range
+        @test_throws ArgumentError      CliffordTableau{4}(Csmall, [1, 1])       # not unique
+    end
+end
+
 end  # @testset "Cliffords"

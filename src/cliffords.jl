@@ -672,22 +672,46 @@ function CliffordTableau{N}(U::AbstractMatrix, qs::Vector{Int}; atol::Real=1e-8)
         small.z_sign[j] = sgn < 0
     end
 
-    # Lift to N qubits on target positions qs.
-    big = CliffordTableau{N}()
-    for j in 1:K
-        q = qs[j]
-        big.x_to_z[q] = _remap_bits(small.x_to_z[j], qs, K)
-        big.x_to_x[q] = _remap_bits(small.x_to_x[j], qs, K)
-        big.x_sign[q] = small.x_sign[j]
-        big.z_to_z[q] = _remap_bits(small.z_to_z[j], qs, K)
-        big.z_to_x[q] = _remap_bits(small.z_to_x[j], qs, K)
-        big.z_sign[q] = small.z_sign[j]
-    end
-    return big
+    return CliffordTableau{N}(small, qs)
 end
 
 CliffordTableau{N}(U::AbstractMatrix; atol::Real=1e-8) where N =
     CliffordTableau{N}(U, collect(1:N); atol=atol)
+
+"""
+    CliffordTableau{N}(C::CliffordTableau{K}, qs::AbstractVector{Int}) -> CliffordTableau{N}
+
+Lift a `K`-qubit Clifford `C` onto qubits `qs` of an `N`-qubit system. Qubits not
+in `qs` are unaffected (identity action). `qs` must list `K` distinct qubits in
+`1:N`; the order matters — local qubit `j` of `C` maps to global qubit `qs[j]`.
+
+Useful for the CAMPS pattern: build/sample a small 2-qubit Clifford that reduces
+local bond dimension, then apply it to a large-N `PauliSum` by lifting first.
+
+```julia
+c_local = rand(CliffordTableau{2})              # 2-qubit Clifford
+c_big   = CliffordTableau{N}(c_local, [a, b])   # acts on qubits (a, b) of N qubits
+ps_new  = apply(c_big, ps)                       # PauliSum{N} transformed
+```
+"""
+function CliffordTableau{N}(C::CliffordTableau{K}, qs::AbstractVector{<:Integer}) where {N, K}
+    length(qs) == K || throw(DimensionMismatch(
+        "qs has length $(length(qs)) but the input tableau acts on K=$K qubits"))
+    all(1 .<= qs .<= N) || throw(ArgumentError("qs must be a subset of 1:$N"))
+    allunique(qs) || throw(ArgumentError("qs entries must be unique"))
+    qs_vec = collect(Int, qs)
+    big = CliffordTableau{N}()
+    @inbounds for j in 1:K
+        q = qs_vec[j]
+        big.x_to_z[q] = _remap_bits(C.x_to_z[j], qs_vec, K)
+        big.x_to_x[q] = _remap_bits(C.x_to_x[j], qs_vec, K)
+        big.x_sign[q] = C.x_sign[j]
+        big.z_to_z[q] = _remap_bits(C.z_to_z[j], qs_vec, K)
+        big.z_to_x[q] = _remap_bits(C.z_to_x[j], qs_vec, K)
+        big.z_sign[q] = C.z_sign[j]
+    end
+    return big
+end
 
 @inline function _remap_bits(bits::Int128, qs::Vector{Int}, K::Int)
     out = Int128(0)

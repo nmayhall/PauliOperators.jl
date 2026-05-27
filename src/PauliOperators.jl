@@ -26,6 +26,7 @@ module PauliOperators
     include("truncation.jl")
     include("evolve.jl")
     include("decompose.jl")
+    include("cliffords.jl")
     include("gates.jl")
     include("analysis.jl")
     include("channels.jl")
@@ -77,11 +78,16 @@ module PauliOperators
     # Decomposition
     export trotterize, qdrift
 
-    # Gates
+    # Cliffords
+    export CliffordGate, CliffordTableau
+    export Hadamard, PhaseGate, PhaseDg, SqrtX, SqrtY
+    export PauliX, PauliY, PauliZ
+    export CNOT, CZ, SWAP
+    export apply, apply!, compose
+
+    # Named-gate wrappers (rewired to Clifford primitives)
     export hadamard, cnot
     export X_gate, Y_gate, Z_gate, S_gate, T_gate
-    export hadamard_to_paulis, cnot_to_paulis
-    export X_gate_to_paulis, Z_gate_to_paulis
 
     # Analysis
     export get_weight_counts, get_weight_probs

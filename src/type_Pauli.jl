@@ -288,6 +288,6 @@ end
 function Base.iterate(::Type{Pauli{N}}, state = 1) where N
     state > 4^N && return
     next = CartesianIndices((2^N,2^N))[state]
-    bp = PauliBasis{N}(next[1]-1, next[2]-1)
-    return Pauli(bp), state+1 
+    bp = PauliBasis{N}(Int128(next[1]-1), Int128(next[2]-1))
+    return Pauli(bp), state+1
 end

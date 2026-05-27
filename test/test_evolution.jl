@@ -235,36 +235,19 @@ using Random
 
     @testset "Gate: S_gate and T_gate" begin
         N = 1
-        # S = diag(1, i), so S|1> = i|1>
+        # S = diag(1, i), so S|1⟩ = i|1⟩ (textbook, no global phase)
         k1 = KetSum(Ket([1]))
         k_s = S_gate(k1, 1)
-        # S applied in Schrödinger picture through evolve
-        # S = exp(-iπ/4 Z), so S|1> = exp(iπ/4)|1> ... let's just check unitarity
-        @test norm(k_s) ≈ 1.0 atol=1e-12
+        @test Vector(k_s)[2] ≈ 1im atol=1e-12
 
-        # T gate preserves norm
+        # S|0⟩ = |0⟩
+        k0 = KetSum(Ket([0]))
+        k_s0 = S_gate(k0, 1)
+        @test Vector(k_s0)[1] ≈ 1.0 atol=1e-12
+
+        # T gate is non-Clifford and still rotation-based; just check norm.
         k_t = T_gate(k1, 1)
         @test norm(k_t) ≈ 1.0 atol=1e-12
-    end
-
-    @testset "Gate: _to_paulis decompositions" begin
-        N = 3
-        # hadamard_to_paulis
-        gens, angs = hadamard_to_paulis(N, 2)
-        @test length(gens) == 3
-        @test length(angs) == 3
-
-        # cnot_to_paulis
-        gens, angs = cnot_to_paulis(N, 1, 2)
-        @test length(gens) == 3
-
-        # X_gate_to_paulis
-        gens, angs = X_gate_to_paulis(N, 1)
-        @test length(gens) == 1
-
-        # Z_gate_to_paulis
-        gens, angs = Z_gate_to_paulis(N, 1)
-        @test length(gens) == 1
     end
 
 end

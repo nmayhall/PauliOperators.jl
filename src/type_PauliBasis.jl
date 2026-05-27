@@ -12,13 +12,15 @@ These are primarily used to provide a basis for linear combinations of Paulis, e
 Phase definitions:
 - `symplectic_phase`: `θs` - phase needed to cancel the phase arising from the ZX factorized form: `θs = θ-θg`
 """
-struct PauliBasis{N} 
+struct PauliBasis{N}
     z::Int128
     x::Int128
-    
+
     # Add an inner constructor that validates N is a value type
     PauliBasis{N}(z::Int128, x::Int128) where {N} = new{N}(z, x)
 end
+
+PauliBasis{N}(z::Integer, x::Integer) where {N} = PauliBasis{N}(Int128(z), Int128(x))
 
 LinearAlgebra.ishermitian(p::PauliBasis) = true
 coeff(p::PauliBasis) = 1

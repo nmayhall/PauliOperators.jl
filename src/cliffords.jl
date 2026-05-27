@@ -68,6 +68,29 @@ Base.copy(C::CliffordTableau{N}) where N = CliffordTableau{N}(
     copy(C.x_to_z), copy(C.x_to_x), copy(C.z_to_z), copy(C.z_to_x),
     copy(C.x_sign), copy(C.z_sign))
 
+const _SUBSCRIPT_DIGITS = ('₀', '₁', '₂', '₃', '₄', '₅', '₆', '₇', '₈', '₉')
+_sub(i::Integer) = join(_SUBSCRIPT_DIGITS[Int(d - '0') + 1] for d in string(i))
+
+# Compact one-line form (used inside containers, `print`, etc.)
+Base.show(io::IO, C::CliffordTableau{N}) where N = print(io, "CliffordTableau{", N, "}(…)")
+
+# Multi-line form (REPL / show(stdout, MIME"text/plain", C)). Lists each generator
+# image: "X_i → ± Pauli string" then "Z_i → ± Pauli string".
+function Base.show(io::IO, ::MIME"text/plain", C::CliffordTableau{N}) where N
+    print(io, "CliffordTableau{", N, "}:")
+    width = ndigits(N)
+    for i in 1:N
+        sgn = C.x_sign[i] ? '-' : '+'
+        p   = string(PauliBasis{N}(C.x_to_z[i], C.x_to_x[i]))
+        print(io, "\n  X", _sub(i), " "^(width - ndigits(i)), " → ", sgn, " ", p)
+    end
+    for i in 1:N
+        sgn = C.z_sign[i] ? '-' : '+'
+        p   = string(PauliBasis{N}(C.z_to_z[i], C.z_to_x[i]))
+        print(io, "\n  Z", _sub(i), " "^(width - ndigits(i)), " → ", sgn, " ", p)
+    end
+end
+
 function Base.:(==)(A::CliffordTableau{N}, B::CliffordTableau{N}) where N
     A.x_to_z == B.x_to_z && A.x_to_x == B.x_to_x &&
     A.z_to_z == B.z_to_z && A.z_to_x == B.z_to_x &&

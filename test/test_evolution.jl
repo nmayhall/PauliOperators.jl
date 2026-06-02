@@ -21,6 +21,28 @@ using Random
         @test Vector(k_evolved) ≈ k_dense
     end
 
+    @testset "KetSum in-place evolution (Schrödinger)" begin
+        N = 3
+        # Build a non-trivial initial KetSum with ComplexF64 coefficients
+        k0 = KetSum(N, T=ComplexF64)
+        k0[Ket(N, 0)] = 1.0 + 0im
+        k0[Ket(N, 1)] = 0.5 + 0.25im
+        k0[Ket(N, 5)] = -0.3 + 0.1im
+        G = PauliBasis(Pauli(N, X=[1], Z=[2]))
+        θ = π/3
+
+        # in-place vs. non-mutating must agree
+        k_inplace = deepcopy(k0)
+        evolve!(k_inplace, G, θ)
+        k_ref = evolve(k0, G, θ)
+        @test Vector(k_inplace) ≈ Vector(k_ref)
+
+        # Verify against dense matrix as well
+        Gmat = Matrix(G)
+        U = exp(-1im * θ/2 * Gmat)
+        @test Vector(k_inplace) ≈ U * Vector(k0)
+    end
+
     @testset "KetSum sequence evolution" begin
         N = 2
         k = KetSum(Ket(N, 0))

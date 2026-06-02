@@ -71,6 +71,31 @@ function evolve(K::KetSum{N, T}, G::PauliBasis{N}, θ::Real) where {N,T}
 end
 
 """
+    evolve!(K::KetSum{N, ComplexF64}, G::PauliBasis{N}, θ::Real)
+
+In-place Schrödinger-picture evolution: K → exp(-iθ/2 G) K
+
+Modifies `K` in place. Element type must be `ComplexF64` so that the
+imaginary contribution from the sine branch can be stored back in `K`.
+"""
+function evolve!(K::KetSum{N, ComplexF64}, G::PauliBasis{N}, θ::Real) where {N}
+    _cos = cos(θ/2)
+    _sin = -1im*sin(θ/2)
+    GK = KetSum(N, T=ComplexF64)
+    for (k, c) in K
+        K[k] *= _cos
+        ci, ki = G * k
+        tmp = get(GK, ki, 0)
+        GK[ki] = tmp + _sin * c * ci
+    end
+    for (k, c) in GK
+        tmp = get(K, k, 0)
+        K[k] = c + tmp
+    end
+    return K
+end
+
+"""
     evolve(O::PauliSum{N,T}, generators::Vector{PauliBasis{N}}, angles::Vector{<:Real};
            truncation::TruncationStrategy=NoTruncation(),
            correction::CorrectionAccumulator=NoCorrection())

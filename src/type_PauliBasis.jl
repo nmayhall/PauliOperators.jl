@@ -12,13 +12,15 @@ These are primarily used to provide a basis for linear combinations of Paulis, e
 Phase definitions:
 - `symplectic_phase`: `θs` - phase needed to cancel the phase arising from the ZX factorized form: `θs = θ-θg`
 """
-struct PauliBasis{N} 
+struct PauliBasis{N}
     z::Int128
     x::Int128
-    
+
     # Add an inner constructor that validates N is a value type
     PauliBasis{N}(z::Int128, x::Int128) where {N} = new{N}(z, x)
 end
+
+PauliBasis{N}(z::Integer, x::Integer) where {N} = PauliBasis{N}(Int128(z), Int128(x))
 
 LinearAlgebra.ishermitian(p::PauliBasis) = true
 coeff(p::PauliBasis) = 1
@@ -67,15 +69,14 @@ function Base.Matrix(p::PauliBasis{N}) where N
     Y = [0 -1im; 1im 0]
     Z = [1 0; 0 -1]
     I = [1 0; 0 1]
-    # for i in reverse(1:N)
     for i in 1:N
-        if str[i] == "X"[1] 
+        if str[i] == 'X'
             mat = kron(X,mat)
-        elseif str[i] == "Y"[1]
+        elseif str[i] == 'Y'
             mat = kron(Y,mat)
-        elseif str[i] == "Z"[1]
+        elseif str[i] == 'Z'
             mat = kron(Z,mat)
-        elseif str[i] == "I"[1]
+        elseif str[i] == 'I'
             mat = kron(I,mat)
         else
             throw(ErrorException)
@@ -88,15 +89,15 @@ end
 PauliBasis(p::PauliBasis) = p
 
 """
-    Base.string(p::Pauli{N}) where N
+    Base.string(p::PauliBasis{N}) where N
 
-Display, y = iY
+Return a string representation. Y sites are displayed as `Y`.
 """
 function Base.string(p::PauliBasis{N}) where N
     yloc = get_on_bits(p.x & p.z)
     Xloc = get_on_bits(p.x & ~p.z)
     Zloc = get_on_bits(p.z & ~p.x)
-    out = ["I" for i in 1:128]
+    out = ["I" for i in 1:N]
 
     for i in Xloc
         out[i] = "X"
@@ -107,19 +108,16 @@ function Base.string(p::PauliBasis{N}) where N
     for i in Zloc
         out[i] = "Z"
     end
-    return join(out[1:N])
+    return join(out)
 end
 
-# function Base.rand(T::Type{PauliBasis{N}}) where N
-#     return PauliBasis{N}(rand(0:Int128(2)^N-1), rand(0:Int128(2)^N-1))
-# end
 function Base.rand(T::Type{PauliBasis{N}}) where N
     max_val = Int128(2)^N - Int128(1)
     return PauliBasis{N}(rand(Int128) & max_val, rand(Int128) & max_val)
 end
 
 
-Base.display(p::PauliBasis) = println(string(p))
+Base.show(io::IO, p::PauliBasis{N}) where N = print(io, string(p))
 
 function otimes(p1::PauliBasis{N}, p2::PauliBasis{M}) where {N,M} 
     PauliBasis{N+M}(p1.z | p2.z << N, p1.x | p2.x << N)

@@ -1,0 +1,12 @@
+codecov:
+  branch: v3-dev
+
+coverage:
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 2%
+    patch:
+      default:
+        target: auto

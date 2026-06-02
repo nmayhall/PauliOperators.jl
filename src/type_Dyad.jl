@@ -1,5 +1,5 @@
 """
-An occupation number vectors, up to 128 qubits
+A scaled dyad operator `s * |ket><bra|`, up to 128 qubits.
 """
 struct Dyad{N}  
     s::ComplexF64  
@@ -10,7 +10,7 @@ end
 """
     Dyad(ket::Vector{T}, bra::Vector{T}) where T<:Union{Bool, Integer}
 
-TBW
+Create a `Dyad` with scalar `1` from vectors of 0s and 1s for the ket and bra.
 """
 function Dyad(ket::Vector{T}, bra::Vector{T}) where T<:Union{Bool, Integer}
     N = length(ket) 
@@ -20,7 +20,7 @@ end
 """
     Dyad(N::Integer, k::Integer, b::Integer)
 
-TBW
+Create an `N`-qubit `Dyad` with scalar `1` from integer ket index `k` and bra index `b`.
 """
 function Dyad(N::Integer, k::Integer, b::Integer)
     return Dyad{N}(true, Ket{N}(k), Bra{N}(b))
@@ -57,7 +57,7 @@ function Base.iterate(::Type{Dyad{N}}, state = 1) where N
     return Dyad{N}(true, Ket{N}(next[1]-1), Bra{N}(next[2]-1)), state+1 
 end
 
-Base.display(d::Dyad{N}) where N = println(string(d))
+Base.show(io::IO, d::Dyad{N}) where N = print(io, string(d))
 function Base.string(d::Dyad{N}) where N
     return @sprintf "% .4f % .4fim | %s\n" real(d.s) imag(d.s) string(DyadBasis(d)) 
 end

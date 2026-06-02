@@ -35,15 +35,15 @@ function LinearAlgebra.ishermitian(p::PauliSum{N, T}) where {N,T}
     return isherm
 end
 
-function Base.display(ps::PauliSum)
-    for (key,val) in ps
-        @printf(" %12.8f +%12.8fi %s\n", real(val), imag(val), key)
+function Base.show(io::IO, ::MIME"text/plain", ps::PauliSum{N,T}) where {N,T}
+    for (key, val) in ps
+        @printf(io, " %12.8f +%12.8fi %s\n", real(val), imag(val), key)
     end
 end
 
-function Base.display(ps::Adjoint{<:Any, PauliSum{N,T}}) where {N,T}
-    for (key,val) in ps.parent
-        @printf(" %12.8f +%12.8fi %s\n", real(val), -imag(val), key)
+function Base.show(io::IO, ::MIME"text/plain", ps::Adjoint{<:Any, PauliSum{N,T}}) where {N,T}
+    for (key, val) in ps.parent
+        @printf(io, " %12.8f +%12.8fi %s\n", real(val), -imag(val), key)
     end
 end
 
@@ -209,16 +209,28 @@ Base.keys(ps::Adjoint{<:Any, PauliSum{N,T}}) where {N,T} = keys(ps.parent)
 
 
 """
-    otimes(p1::PauliSum{N}, p2::PauliSum{M}) where {N,M}
+    otimes(p1::PauliSum{N,T}, p2::PauliSum{M,T}) where {N,M,T}
 
-TBW
+Tensor product of two `PauliSum`s, returning a `PauliSum{N+M}`.
 """
 function otimes(p1::PauliSum{N,T}, p2::PauliSum{M,T}) where {N,M,T}
     out = PauliSum(N+M, T)
     for (op1,coeff1) in p1
         for (op2,coeff2) in p2
-            out[op1 ⊗ op2] = coeff1 * coeff2 
+            out[op1 ⊗ op2] = coeff1 * coeff2
         end
     end
-    return out 
+    return out
+end
+
+"""
+    osum(p1::PauliSum{N,T}, p2::PauliSum{M,T}) where {N,M,T}
+
+Direct sum of two `PauliSum`s: `p1 ⊕ p2 = p1 ⊗ I_M + I_N ⊗ p2`,
+returning a `PauliSum{N+M, T}`.
+"""
+function osum(p1::PauliSum{N,T}, p2::PauliSum{M,T}) where {N,M,T}
+    I_N = PauliSum(N, T); I_N[PauliBasis{N}(Int128(0), Int128(0))] = one(T)
+    I_M = PauliSum(M, T); I_M[PauliBasis{M}(Int128(0), Int128(0))] = one(T)
+    return p1 ⊗ I_M + I_N ⊗ p2
 end

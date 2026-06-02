@@ -59,8 +59,6 @@ PauliTypes{N} = Union{Pauli{N}, PauliBasis{N}}
 
 Return the coefficient from the product of the scalar times the inverse symplectic_phase
 """
-# coeff(p::Pauli) = 1im^Float64((4 - symplectic_phase(p) )%4)
-# symplectic_phase(p::Pauli) = (4-count_ones(p.z & p.x)%4)%4
 @inline coeff(p::Pauli) = p.s * 1im^inv_symplectic_phase(p)
 @inline inv_symplectic_phase(p::Pauli) = (4-symplectic_phase(p)%4)
 @inline symplectic_phase(p::Pauli) = (4-count_ones(p.z & p.x)%4)%4
@@ -70,15 +68,13 @@ function Pauli(p::PauliBasis{N}) where N
 end
 
 """
-    Pauli(z::I, x::I) where I<:Integer
+    Pauli(z::Integer, x::Integer, N)
 
-TBW
+Construct a `Pauli{N}` from integer bitstrings `z` and `x` with scalar `s=1`.
 """
 function Pauli(z::I, x::I, N) where I<:Integer
-    # N = maximum(map(i -> ndigits(i, base=2), [x, z]))
     z < Int128(2)^N || throw(DimensionMismatch)
     x < Int128(2)^N || throw(DimensionMismatch)
-    # θ = get_hermitian_phase(z,x)
     return Pauli{N}(1, z, x)
 end
 
@@ -90,7 +86,7 @@ Create a `Pauli` from a string, e.g.,
 
     a = Pauli("XXYZIZ")
 
-This is convieniant for manual manipulations, but is not type-stable so will be slow.
+This is convenient for manual manipulations, but is not type-stable so will be slow.
 """
 function Pauli(str::String)
     for i in str
@@ -149,7 +145,6 @@ function Pauli(N::Integer; X=[], Y=[], Z=[])
         str[i] = "Z"
     end
    
-    # print(str[1:N])
     return Pauli(join(str))
 end   
 
@@ -165,7 +160,7 @@ function Base.string(p::Pauli{N}) where N
     yloc = get_on_bits(p.x & p.z)
     Xloc = get_on_bits(p.x & ~p.z)
     Zloc = get_on_bits(p.z & ~p.x)
-    out = ["I" for i in 1:128]
+    out = ["I" for i in 1:N]
 
     for i in Xloc
         out[i] = "X"
@@ -176,27 +171,19 @@ function Base.string(p::Pauli{N}) where N
     for i in Zloc
         out[i] = "Z"
     end
-    return join(out[1:N])
+    return join(out)
 end
 
-"""
-    Base.display(p::Pauli{N}) where N
-
-TBW
-"""
-function Base.display(p::Pauli{N}) where N
-    @printf "% .4f % .4fim | %s\n" real(p.s) imag(p.s) string(p) 
+function Base.show(io::IO, p::Pauli{N}) where N
+    @printf(io, "% .4f % .4fim | %s", real(p.s), imag(p.s), string(p))
 end
 
 
 """
     rand(Pauli{N})
 
-TBW
+Generate a random `Pauli{N}` with random `z`, `x` bitstrings and a random complex scalar.
 """
-# function Base.rand(T::Type{Pauli{N}}) where N
-#     return Pauli{N}(randn(ComplexF64), rand(0:Int128(2)^N-1), rand(0:Int128(2)^N-1))
-# end
 function Base.rand(T::Type{Pauli{N}}) where N
     max_val = Int128(2)^N - Int128(1)
     return Pauli{N}(randn(ComplexF64), rand(Int128) & max_val, rand(Int128) & max_val)
@@ -208,9 +195,9 @@ function nY(p::Pauli)
 end
 
 """
-    ishermitian(p::Pauli)
+    ishermitian(p::Pauli; thresh=1e-16)
 
-TBW
+Return `true` if the coefficient of `p` is real (within `thresh`).
 """
 function LinearAlgebra.ishermitian(p::Pauli; thresh=1e-16)
     return abs(imag(coeff(p)))<thresh
@@ -228,7 +215,7 @@ Base.Matrix(p::Pauli) = Matrix(PauliBasis(p)) * coeff(p)
 """
     Base.:-(p::Pauli{N}) where {N}
 
-TBW
+Negate the scalar of `p`.
 """
 function Base.:-(p::Pauli{N}) where {N}
     return Pauli{N}(-p.s, p.z, p.x) 
@@ -247,7 +234,6 @@ Since the PauliBasis is Hermitian, we have that
     Pauli' = coeff' ⋅ P₁⊗...⊗Pₙ
 """
 Base.adjoint(p::Pauli{N}) where N = Pauli{N}(coeff(p)'*1im^symplectic_phase(p), p.z, p.x)
-# Base.adjoint(p::Pauli{N}) where N = Pauli{N}(coeff(p)'*1im^symplectic_phase(p), p.z, p.x)
 
 function LinearAlgebra.tr(p::Union{Pauli{N}, PauliBasis{N}}) where N
     return coeff(p) * ((p.z == 0) && (p.x == 0)) * 2^N
@@ -284,7 +270,7 @@ end
 """
     otimes(p1::Pauli{N}, p2::Pauli{M}) where {N,M}
 
-TBW
+Tensor product of two Paulis, returning a `Pauli{N+M}`.
 """
 function otimes(p1::Pauli{N}, p2::Pauli{M}) where {N,M} 
     Pauli{N+M}(p1.s * p2.s, p1.z | p2.z << N, p1.x | p2.x << N)

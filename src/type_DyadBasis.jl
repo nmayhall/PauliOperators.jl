@@ -15,7 +15,7 @@ DyadBasis(d::DyadBasis) = d
 """
     DyadBasis(ket::Vector{T}, bra::Vector{T}) where T<:Union{Bool, Integer}
 
-TBW
+Create a `DyadBasis` from vectors of 0s and 1s for the ket and bra.
 """
 function DyadBasis(ket::Vector{T}, bra::Vector{T}) where T<:Union{Bool, Integer}
     @assert length(ket) == length(bra)
@@ -26,7 +26,7 @@ end
 """
     DyadBasis(N::Integer, k::Integer, b::Integer)
 
-TBW
+Create an `N`-qubit `DyadBasis` from integer ket index `k` and bra index `b`.
 """
 function DyadBasis(N::Integer, k::Integer, b::Integer)
     return DyadBasis{N}(Ket{N}(Int128(k)), Bra{N}(Int128(b)))
@@ -45,7 +45,7 @@ function Base.iterate(::Type{DyadBasis{N}}, state = 1) where N
     return DyadBasis{N}(Ket{N}(next[1]-1), Bra{N}(next[2]-1)), state+1 
 end
 
-Base.display(d::DyadBasis{N}) where N = println(string(d))
+Base.show(io::IO, d::DyadBasis{N}) where N = print(io, string(d))
 function Base.string(d::DyadBasis{N}) where N
     return string(d.ket)*string(d.bra)
 end

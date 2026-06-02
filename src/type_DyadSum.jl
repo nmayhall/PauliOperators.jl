@@ -19,26 +19,34 @@ function Base.getindex(ds::Adjoint{<:Any,DyadSum{N,T}}, d::Dyad{N}) where {N,T}
 end
 
 
-function Base.display(ps::DyadSum)
-    for (key,val) in ps
-        @printf(" %12.8f +%12.8fi %s\n", real(val), imag(val), key)
+function Base.show(io::IO, ::MIME"text/plain", ps::DyadSum{N,T}) where {N,T}
+    for (key, val) in ps
+        @printf(io, " %12.8f +%12.8fi %s\n", real(val), imag(val), key)
     end
 end
 
-function Base.display(ps::Adjoint{<:Any, DyadSum{N,T}}) where {N,T}
-    for (key,val) in ps.parent
-        @printf(" %12.8f +%12.8fi %s\n", real(val), -imag(val), key')
+function Base.show(io::IO, ::MIME"text/plain", ps::Adjoint{<:Any, DyadSum{N,T}}) where {N,T}
+    for (key, val) in ps.parent
+        @printf(io, " %12.8f +%12.8fi %s\n", real(val), -imag(val), key')
     end
 end
 
 """
-    clip!(ps::PauliSum; thresh=1e-16)
+    coeff_clip!(ps::DyadSum{N,T}, thresh::Real) where {N,T}
 
-Delete Dyad's with coeffs smaller than thresh
+Remove Dyad terms with |coefficient| <= `thresh`.
 """
-function clip!(ps::DyadSum{N,T}; thresh=1e-16) where {N,T}
+function coeff_clip!(ps::DyadSum{N,T}, thresh::Real) where {N,T}
     filter!(p->abs(p.second) > thresh, ps)
 end
+
+"""
+    clip!(ps::DyadSum; thresh=1e-16)
+
+!!! warning "Deprecated"
+    Use `coeff_clip!(ps, thresh)` instead.
+"""
+clip!(ps::DyadSum; thresh=1e-16) = coeff_clip!(ps, thresh)
 
 
 function Base.Matrix(ds::DyadSum{N, T}) where {N,T}
@@ -78,7 +86,7 @@ end
 """
     Base.:*(d1::DyadSum{N,T}, d2::DyadSum{N,T}) where {N,T}
 
-TBW
+Multiply two `DyadSum`s.
 """
 function Base.:*(d1::DyadSum{N,T}, d2::DyadSum{N,T}) where {N,T}
     d3 = DyadSum{N,T}()
@@ -163,7 +171,6 @@ function LinearAlgebra.ishermitian(d::DyadSum{N, T}) where {N,T}
         else
             if haskey(d, dyad') == false
                 return false
-                # isherm = isherm && isapprox(imag(d[DyadBasis(dyad')]), 0, atol=1e-16)
             else
                 if abs(coeff - d[DyadBasis(dyad')]') > 1e-16
                     return false
@@ -205,7 +212,7 @@ end
 """
     Base.:+(ps1::DyadSum{N}, ps2::DyadSum{N}) where {N}
 
-TBW
+Add two `DyadSum`s.
 """
 function Base.:+(ps1::DyadSum{N,T}, ps2::DyadSum{N,T}) where {N,T} 
     out = deepcopy(ps1)
@@ -242,7 +249,7 @@ end
 """
     otimes(p1::DyadSum{N,T}, p2::DyadSum{M,T}) where {N,M,T}
 
-TBW
+Tensor product of two `DyadSum`s, returning a `DyadSum{N+M}`.
 """
 function otimes(p1::DyadSum{N,T}, p2::DyadSum{M,T}) where {N,M,T}
     out = DyadSum(N+M, T)

@@ -18,7 +18,7 @@ Base.parent(d::Adjoint{<:Any, <:KetSum}) = d.parent
 """
     Base.show(io::IO, v::KetSum{N,T}) where {N,T}
 
-TBW
+Print each ket and its coefficient.
 """
 function Base.show(io::IO, v::KetSum{N,T}) where {N,T}
     for (ket,coeff) in v
@@ -29,7 +29,7 @@ end
 """
     LinearAlgebra.dot(v1::KetSum{N,T}, v2::KetSum{N,TT}) where {N,T,TT}
 
-TBW
+Compute the inner product `v1' * v2`, iterating over the shorter dictionary.
 """
 function LinearAlgebra.dot(v1::KetSum{N,T}, v2::KetSum{N,TT}) where {N,T,TT}
     out = 0.0
@@ -48,7 +48,7 @@ end
 """
     scale!(v1::KetSum{N,T}, a::Number) where {N,T}
 
-TBW
+Scale all coefficients in `v1` by `a` in-place.
 """
 function scale!(v1::KetSum{N,T}, a::Number) where {N,T}
     map!(x->x*a, values(v1))
@@ -66,7 +66,7 @@ Base.:/(v::KetSum, a::Number) = v*(1/a)
 """
     Base.Vector(k::KetSum{N,T}) where {N,T}
 
-TBW
+Create a dense vector representation of the `KetSum` in the standard computational basis.
 """
 function Base.Vector(k::KetSum{N,T}) where {N,T}
     vec = zeros(T,Int128(2)^N)
@@ -88,7 +88,7 @@ end
 """
     otimes(p1::KetSum{N,T}, p2::KetSum{M,T}) where {N,M,T}
 
-TBW
+Tensor product of two `KetSum`s, returning a `KetSum{N+M}`.
 """
 function otimes(p1::KetSum{N,T}, p2::KetSum{M,T}) where {N,M,T}
     out = KetSum(N+M, T)

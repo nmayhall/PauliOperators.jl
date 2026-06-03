@@ -13,7 +13,7 @@ A Julia package for efficient manipulation of Pauli operators and quantum states
 
 ```julia
 using Pkg
-Pkg.Registry.add(url="git@github.com:mayhallgroup/MayhallJuliaRegistry.git")  # one-time setup
+Pkg.Registry.add(url="https://github.com/mayhallgroup/MayhallJuliaRegistry.git")  # one-time setup
 Pkg.add("PauliOperators")
 ```
 

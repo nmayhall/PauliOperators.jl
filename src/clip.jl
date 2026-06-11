@@ -34,6 +34,16 @@ function weight_clip!(ps::PauliSum{N}, max_weight::Int) where {N}
 end
 
 """
+    weight_damped_clip!(ps::PauliSum{N}, alpha::Real, thresh::Real)
+
+Remove terms with |coefficient|·exp(-alpha·weight) <= `thresh`.
+At `alpha = 0` this reduces to `coeff_clip!(ps, thresh)`.
+"""
+function weight_damped_clip!(ps::PauliSum{N}, alpha::Real, thresh::Real) where {N}
+    return filter!(p -> abs(p.second) * exp(-alpha * weight(p.first)) > thresh, ps)
+end
+
+"""
     majorana_weight(p::Union{PauliBasis{N}, Pauli{N}}) where N
 
 Compute the Majorana weight of a Pauli string. The Majorana weight counts the number

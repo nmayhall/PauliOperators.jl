@@ -48,6 +48,20 @@ struct MajoranaWeightTruncation <: TruncationStrategy
 end
 
 """
+    WeightDampedTruncation(alpha::Float64, thresh::Float64)
+
+Remove Pauli terms with |coefficient|·exp(-alpha·weight) <= `thresh`,
+i.e. a coefficient threshold that grows exponentially with Pauli weight.
+`alpha = 0` reduces to `CoeffTruncation(thresh)`; large `alpha` approaches
+a hard weight cutoff.
+"""
+struct WeightDampedTruncation <: TruncationStrategy
+    alpha::Float64
+    thresh::Float64
+end
+WeightDampedTruncation(alpha::Real) = WeightDampedTruncation(alpha, 1e-6)
+
+"""
     StochasticCoeffTruncation(epsilon::Float64; rng=Random.default_rng())
 
 Unbiased stochastic compression (Russian Roulette). Wraps `stochastic_clip!`.
@@ -123,6 +137,10 @@ end
 
 function _apply!(O::PauliSum{N}, s::MajoranaWeightTruncation) where N
     return majorana_weight_clip!(O, s.max_weight)
+end
+
+function _apply!(O::PauliSum{N}, s::WeightDampedTruncation) where N
+    return weight_damped_clip!(O, s.alpha, s.thresh)
 end
 
 function _apply!(O::PauliSum{N}, s::StochasticCoeffTruncation) where N

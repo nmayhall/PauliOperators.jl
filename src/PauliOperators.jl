@@ -57,7 +57,7 @@ module PauliOperators
     export commute
 
     export evolve, evolve!
-    export weight, coeff_clip!, weight_clip!
+    export weight, coeff_clip!, weight_clip!, weight_damped_clip!
     export majorana_weight, majorana_weight_clip!
     export stochastic_clip!
 
@@ -68,7 +68,7 @@ module PauliOperators
     # Truncation strategy system
     export TruncationStrategy, CorrectionAccumulator
     export NoTruncation, CoeffTruncation, WeightTruncation
-    export MajoranaWeightTruncation, CompositeTruncation
+    export MajoranaWeightTruncation, WeightDampedTruncation, CompositeTruncation
     export StochasticCoeffTruncation, StochasticSamplingTruncation
     export AdaptiveTruncation
     export NoCorrection, EnergyCorrection, EnergyVarianceCorrection

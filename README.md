@@ -169,8 +169,10 @@ An abstract `TruncationStrategy` type system with pluggable error tracking via `
 # Available strategies
 strat = CoeffTruncation(1e-6)             # Drop terms with |c| < threshold
 strat = WeightTruncation(3)               # Keep terms with Pauli weight ≤ 3
+strat = XWeightTruncation(2)              # Keep terms with ≤ 2 off-diagonal (X/Y) factors
 strat = MajoranaWeightTruncation(4)       # Keep terms with Majorana weight ≤ 4
 strat = WeightDampedTruncation(α, ε)      # Drop terms with |c|·e^(-α·weight) ≤ ε
+strat = XWeightDampedTruncation(α, ε)     # Drop terms with |c|·e^(-α·x_weight) ≤ ε
 strat = AdaptiveTruncation(1000, 1e-8)    # Keep at most 1000 terms, min threshold 1e-8
 strat = CompositeTruncation(s1, s2, ...)  # Apply multiple strategies in sequence
 
@@ -276,8 +278,10 @@ O_off  = offdiag(O)         # off-diagonal terms only (x != 0)
 ```julia
 coeff_clip!(O; thresh=1e-8)          # drop terms with |c| < thresh
 weight_clip!(O, max_weight)          # drop terms with weight > max_weight
+x_weight_clip!(O, max_weight)        # drop terms with X-weight (X/Y factors) > max_weight
 majorana_weight_clip!(O, max_weight) # drop by Majorana weight
 weight_damped_clip!(O, α, thresh)    # drop terms with |c|·e^(-α·weight) ≤ thresh
+x_weight_damped_clip!(O, α, thresh)  # drop terms with |c|·e^(-α·x_weight) ≤ thresh
 stochastic_clip!(O, ε)               # stochastic rounding
 ```
 

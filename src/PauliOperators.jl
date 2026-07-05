@@ -5,6 +5,7 @@ module PauliOperators
     using StaticArrays
     using Random
     using BitIntegers
+    using Distributed
 
     include("helpers.jl")
     include("type_PauliBasis.jl")
@@ -31,6 +32,7 @@ module PauliOperators
     include("analysis.jl")
     include("channels.jl")
     include("transformations.jl")
+    include("distributed.jl")
 
     const ⊗ = otimes
     const ⊕ = osum
@@ -101,4 +103,9 @@ module PauliOperators
 
     # Transformations
     export jordan_wigner, boson_to_paulis
+
+    # Multinode (across-node) evolution
+    export uinttype
+    export DistributedPauliSum, distribute, collect_paulisum
+    export ensure_pauli_workers!, sharded_summary, opnorm2, destroy!
 end

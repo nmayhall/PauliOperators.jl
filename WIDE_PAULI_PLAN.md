@@ -72,9 +72,24 @@ hand-rolled `NTuple{W,UInt64}` needed.
 7. Memory/term-count estimator for SPD at target threshold (feeds the
    multinode-or-not decision).
 
-## After this branch
+## Status
 
-- Decide multinode level: sample-parallel (exists) vs sharded single Pauli sum.
-- If sharded: shard `PauliSum` by hash of `PauliBasis` across nodes; distributed
-  `evolve!` routes sin-branch terms `G·p` to owners, merges, clips — same
-  hash-sharded pattern as `DistributedTPSCIstate` in TPSChem.jl.
+- DONE: wide representation (BitIntegers), validated to N=1000 (`UInt1024`).
+  Full suite green; `test/test_wide.jl` added. Committed.
+- DONE: multinode evolution. `src/distributed.jl` adds `DistributedPauliSum`
+  (hash-sharded by `PauliBasis`) + distributed `evolve!`/`coeff_clip!` that route
+  sin-branch terms `G·p` peer-to-peer to their owners and merge — same
+  hash-sharded pattern as `DistributedTPSCIstate` in TPSChem.jl. Distributed
+  evolution reproduces serial `evolve!` exactly (max diff 0.0);
+  `test/test_distributed.jl` added; runs at N=1000. See
+  `examples/distributed_evolution.jl`.
+
+## Follow-ups (not yet done)
+
+- Container: `PauliSum` is a `Dict`; the key type in the `PauliSum{N,T}` alias is
+  the abstract `PauliBasis{N}` (works, but boxed keys). Consider a concrete-key
+  container or PauliStrings-style struct-of-arrays (`Vector{P}`+`Vector{T}`) for
+  cache/memory — also the natural shard unit.
+- Multinode: overlap communication with compute; batch/trim empty buckets;
+  distributed `expectation_value` on product states; threads within each worker.
+- Widen `Dyad`/`DyadBasis`/`DyadSum` (density-matrix path) past 128 if needed.

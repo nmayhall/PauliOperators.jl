@@ -43,6 +43,84 @@ using Random
         @test haskey(ps, PauliBasis("XXII"))
     end
 
+    @testset "XWeightTruncation" begin
+        N = 4
+        ps = PauliSum(N, ComplexF64)
+        ps[PauliBasis("IIII")] = 1.0 + 0im   # x-weight 0
+        ps[PauliBasis("ZZZZ")] = 0.9 + 0im    # x-weight 0 (diagonal)
+        ps[PauliBasis("XIII")] = 0.5 + 0im    # x-weight 1
+        ps[PauliBasis("YZII")] = 0.4 + 0im    # x-weight 1 (Y counts, Z does not)
+        ps[PauliBasis("XYII")] = 0.3 + 0im    # x-weight 2
+        ps[PauliBasis("XYZX")] = 0.1 + 0im    # x-weight 3
+
+        @test x_weight(PauliBasis("IIII")) == 0
+        @test x_weight(PauliBasis("ZZZZ")) == 0
+        @test x_weight(PauliBasis("YZII")) == 1
+        @test x_weight(PauliBasis("XYZX")) == 3
+
+        truncate!(ps, XWeightTruncation(1))
+        @test length(ps) == 4
+        @test haskey(ps, PauliBasis("IIII"))
+        @test haskey(ps, PauliBasis("ZZZZ"))
+        @test haskey(ps, PauliBasis("XIII"))
+        @test haskey(ps, PauliBasis("YZII"))
+    end
+
+    @testset "XWeightDampedTruncation" begin
+        N = 4
+
+        # alpha = 0 reduces exactly to CoeffTruncation
+        Random.seed!(2)
+        ps = rand(PauliSum{N}; n_paulis=30)
+        ps_damped = deepcopy(ps)
+        ps_coeff = deepcopy(ps)
+        truncate!(ps_damped, XWeightDampedTruncation(0.0, 0.3))
+        truncate!(ps_coeff, CoeffTruncation(0.3))
+        @test ps_damped == ps_coeff
+
+        # Criterion check: remove iff |c|·exp(-alpha·x_weight) <= thresh
+        alpha, thresh = 0.5, 0.05
+        ps = PauliSum(N, ComplexF64)
+        ps[PauliBasis("ZZZZ")] = 1.0 + 0im    # xw=0: 1.0 > 0.05, keep
+        ps[PauliBasis("XIII")] = 0.01 + 0im   # xw=1: 0.01·e^-0.5 ≈ 0.006, drop
+        ps[PauliBasis("XYII")] = 0.5 + 0im    # xw=2: 0.5·e^-1 ≈ 0.184, keep
+        ps[PauliBasis("XYXI")] = 0.1 + 0im    # xw=3: 0.1·e^-1.5 ≈ 0.022, drop
+        ps[PauliBasis("XYXY")] = 1.0 + 0im    # xw=4: e^-2 ≈ 0.135, keep
+
+        truncate!(ps, XWeightDampedTruncation(alpha, thresh))
+        @test length(ps) == 3
+        @test haskey(ps, PauliBasis("ZZZZ"))
+        @test haskey(ps, PauliBasis("XYII"))
+        @test haskey(ps, PauliBasis("XYXY"))
+        @test ps[PauliBasis("XYXY")] == 1.0 + 0im
+
+        # Monotonicity: larger alpha keeps a subset of the terms
+        Random.seed!(3)
+        ps = rand(PauliSum{N}; n_paulis=30)
+        kept = map((0.0, 0.5, 2.0)) do a
+            Set(keys(truncate!(deepcopy(ps), XWeightDampedTruncation(a, 0.1))))
+        end
+        @test issubset(kept[3], kept[2])
+        @test issubset(kept[2], kept[1])
+
+        # Composes with other strategies and matches sequential application
+        ps = PauliSum(N, ComplexF64)
+        ps[PauliBasis("ZZZZ")] = 1.0 + 0im
+        ps[PauliBasis("XYII")] = 0.5 + 0im
+        ps[PauliBasis("XYXI")] = 0.4 + 0im
+        ps[PauliBasis("XIII")] = 1e-8 + 0im
+        ps2 = deepcopy(ps)
+
+        truncate!(ps, CompositeTruncation(XWeightDampedTruncation(0.5, 0.05), XWeightTruncation(2)))
+        x_weight_damped_clip!(ps2, 0.5, 0.05)
+        x_weight_clip!(ps2, 2)
+        @test ps == ps2
+
+        # Default convenience constructor
+        @test XWeightDampedTruncation(0.5).thresh == 1e-6
+        @test XWeightDampedTruncation(0.5).alpha == 0.5
+    end
+
     @testset "MajoranaWeightTruncation" begin
         N = 4
         ps = PauliSum(N, ComplexF64)

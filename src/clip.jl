@@ -44,6 +44,36 @@ function weight_damped_clip!(ps::PauliSum{N}, alpha::Real, thresh::Real) where {
 end
 
 """
+    x_weight(p::PauliBasis)
+
+Number of qubits acted on by an off-diagonal (X or Y) single-qubit factor.
+Both X and Y set the x-bit, so this counts the off-diagonal support of the
+Pauli string (Z and I factors do not contribute).
+"""
+function x_weight(p::PauliBasis)
+    return count_ones(p.x)
+end
+
+"""
+    x_weight_clip!(ps::PauliSum{N}, max_weight::Int)
+
+Remove terms with X-weight (number of X/Y factors) above `max_weight`.
+"""
+function x_weight_clip!(ps::PauliSum{N}, max_weight::Int) where {N}
+    return filter!(p->x_weight(p.first) <= max_weight, ps)
+end
+
+"""
+    x_weight_damped_clip!(ps::PauliSum{N}, alpha::Real, thresh::Real)
+
+Remove terms with |coefficient|·exp(-alpha·x_weight) <= `thresh`.
+At `alpha = 0` this reduces to `coeff_clip!(ps, thresh)`.
+"""
+function x_weight_damped_clip!(ps::PauliSum{N}, alpha::Real, thresh::Real) where {N}
+    return filter!(p -> abs(p.second) * exp(-alpha * x_weight(p.first)) > thresh, ps)
+end
+
+"""
     majorana_weight(p::Union{PauliBasis{N}, Pauli{N}}) where N
 
 Compute the Majorana weight of a Pauli string. The Majorana weight counts the number

@@ -39,6 +39,15 @@ struct WeightTruncation <: TruncationStrategy
 end
 
 """
+    XWeightTruncation(max_weight::Int)
+
+Remove Pauli terms with X-weight (number of X/Y factors) > `max_weight`.
+"""
+struct XWeightTruncation <: TruncationStrategy
+    max_weight::Int
+end
+
+"""
     MajoranaWeightTruncation(max_weight::Int)
 
 Remove Pauli terms with Majorana weight > `max_weight`.
@@ -60,6 +69,20 @@ struct WeightDampedTruncation <: TruncationStrategy
     thresh::Float64
 end
 WeightDampedTruncation(alpha::Real) = WeightDampedTruncation(alpha, 1e-6)
+
+"""
+    XWeightDampedTruncation(alpha::Float64, thresh::Float64)
+
+Remove Pauli terms with |coefficient|·exp(-alpha·x_weight) <= `thresh`,
+i.e. a coefficient threshold that grows exponentially with X-weight (the
+number of X/Y factors). `alpha = 0` reduces to `CoeffTruncation(thresh)`;
+large `alpha` approaches a hard X-weight cutoff.
+"""
+struct XWeightDampedTruncation <: TruncationStrategy
+    alpha::Float64
+    thresh::Float64
+end
+XWeightDampedTruncation(alpha::Real) = XWeightDampedTruncation(alpha, 1e-6)
 
 """
     StochasticCoeffTruncation(epsilon::Float64; rng=Random.default_rng())
@@ -135,12 +158,20 @@ function _apply!(O::PauliSum{N}, s::WeightTruncation) where N
     return weight_clip!(O, s.max_weight)
 end
 
+function _apply!(O::PauliSum{N}, s::XWeightTruncation) where N
+    return x_weight_clip!(O, s.max_weight)
+end
+
 function _apply!(O::PauliSum{N}, s::MajoranaWeightTruncation) where N
     return majorana_weight_clip!(O, s.max_weight)
 end
 
 function _apply!(O::PauliSum{N}, s::WeightDampedTruncation) where N
     return weight_damped_clip!(O, s.alpha, s.thresh)
+end
+
+function _apply!(O::PauliSum{N}, s::XWeightDampedTruncation) where N
+    return x_weight_damped_clip!(O, s.alpha, s.thresh)
 end
 
 function _apply!(O::PauliSum{N}, s::StochasticCoeffTruncation) where N

@@ -10,12 +10,12 @@ function evolve(O::PauliSum{N, T}, G::PauliBasis{N}, θ::Real) where {N,T}
     _cos = cos(θ)
     _sin = 1im*sin(θ)
     cos_branch = deepcopy(O)
-    sin_branch = PauliSum(N)
+    sin_branch = PauliSum(N, T)
     for (p,c) in O
         if commute(p,G) == false
             cos_branch[p] *= _cos
             tmp = c*_sin*G*p
-            curr = get(sin_branch, PauliBasis(tmp), 0.0) + coeff(tmp)
+            curr = get(sin_branch, PauliBasis(tmp), zero(T)) + coeff(tmp)
             sin_branch[PauliBasis(tmp)] = curr
         end
     end
@@ -32,11 +32,11 @@ In-place Heisenberg-picture evolution: O(θ) = exp(iθ/2 G) O exp(-iθ/2 G)
 function evolve!(O::PauliSum{N, T}, G::PauliBasis{N}, θ::Real) where {N,T}
     _cos = cos(θ)
     _sin = 1im*sin(θ)
-    sin_branch = PauliSum(N)
+    sin_branch = PauliSum(N, T)
     for (p,c) in O
         if commute(p,G) == false
             tmp = c*_sin*G*p
-            curr = get(sin_branch, PauliBasis(tmp), 0.0) + coeff(tmp)
+            curr = get(sin_branch, PauliBasis(tmp), zero(T)) + coeff(tmp)
             sin_branch[PauliBasis(tmp)] = curr
             O[p] *= _cos
         end
@@ -108,7 +108,7 @@ where Uₖ = exp(-iθₖ/2 Gₖ). The effective right-side unitary is U₁U₂�
 
 Sequences from `trotterize` and `qdrift` are designed for this convention.
 """
-function evolve(O::PauliSum{N,T}, generators::Vector{PauliBasis{N}}, angles::Vector{<:Real};
+function evolve(O::PauliSum{N,T}, generators::Vector{<:PauliBasis{N}}, angles::Vector{<:Real};
                 truncation::TruncationStrategy=NoTruncation(),
                 correction::CorrectionAccumulator=NoCorrection()) where {N,T}
     length(generators) == length(angles) || throw(DimensionMismatch("generators and angles must have same length"))
@@ -134,7 +134,7 @@ To use them with KetSum, reverse the sequence:
 
     evolve(K, reverse(generators), reverse(angles))
 """
-function evolve(K::KetSum{N,T}, generators::Vector{PauliBasis{N}}, angles::Vector{<:Real}) where {N,T}
+function evolve(K::KetSum{N,T}, generators::Vector{<:PauliBasis{N}}, angles::Vector{<:Real}) where {N,T}
     length(generators) == length(angles) || throw(DimensionMismatch("generators and angles must have same length"))
     Kt = deepcopy(K)
     for (gi, θi) in zip(generators, angles)

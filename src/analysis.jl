@@ -126,7 +126,7 @@ function largest_diag(ps::PauliSum{N,T}) where {N,T}
 end
 
 """
-    Base.Matrix(O::PauliSum{N,T}, S::Vector{Ket{N}}) where {N,T}
+    Base.Matrix(O::PauliSum{N,T}, S::Vector{<:Ket{N}}) where {N,T}
 
 Construct the matrix representation of operator `O` in the subspace spanned by kets `S`.
 
@@ -135,7 +135,7 @@ Returns an `nS × nS` matrix where `M[i,j] = ⟨S[i]|O|S[j]⟩`.
 Uses X-bitstring grouping for efficiency: for each ket pair `(i,j)`, only Pauli terms
 whose X-bitstring matches `S[i].v ⊻ S[j].v` are visited, rather than all terms in `O`.
 """
-function Base.Matrix(O::PauliSum{N,T}, S::Vector{Ket{N}}) where {N,T}
+function Base.Matrix(O::PauliSum{N,T}, S::Vector{<:Ket{N}}) where {N,T}
     nS = length(S)
 
     # Group Pauli terms by X-bitstring for efficient subspace matrix construction.
@@ -167,13 +167,13 @@ function Base.Matrix(O::PauliSum{N,T}, S::Vector{Ket{N}}) where {N,T}
 end
 
 """
-    Base.Vector(K::KetSum{N,T}, S::Vector{Ket{N}}) where {N,T}
+    Base.Vector(K::KetSum{N,T}, S::Vector{<:Ket{N}}) where {N,T}
 
 Project a KetSum onto the subspace defined by basis kets `S`.
 
 Returns a vector of length `length(S)` with `v[i] = K[S[i]]`.
 """
-function Base.Vector(K::KetSum{N,T}, S::Vector{Ket{N}}) where {N,T}
+function Base.Vector(K::KetSum{N,T}, S::Vector{<:Ket{N}}) where {N,T}
     nS = length(S)
     v = zeros(T, nS)
     for (i, ki) in enumerate(S)

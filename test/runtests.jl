@@ -15,4 +15,5 @@ using Test
     include("test_analysis.jl")
     include("test_channels.jl")
     include("test_transformations.jl")
+    include("test_wide.jl")
 end

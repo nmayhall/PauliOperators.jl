@@ -4,6 +4,7 @@ module PauliOperators
     using LinearAlgebra
     using StaticArrays
     using Random
+    using BitIntegers
 
     include("helpers.jl")
     include("type_PauliBasis.jl")

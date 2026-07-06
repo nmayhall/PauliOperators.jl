@@ -134,24 +134,69 @@ end
 
 # ---- distributed evolution ----
 
-# Phase 1: cos-scale anticommuting terms in place; bucket sin terms by owner.
-function _dps_rotate_local!(id::Symbol, G, θ::Real, workers)
-    return _dps_rotate_local_typed!(id, _dps_get(id), G, θ, workers)
+# Phase 1: cos-scale anticommuting terms; bucket sin terms by owner.
+# On-node this is threaded: the terms are chunked across Julia threads, each chunk
+# fills its OWN per-destination staging buckets (no shared-Dict races) and records
+# which terms to cos-scale; the cheap cos-scaling and the bucket merge run after.
+function _dps_rotate_local!(id::Symbol, G, θ::Real, workers, threaded::Bool=true)
+    return _dps_rotate_local_typed!(id, _dps_get(id), G, θ, workers, threaded)
 end
-function _dps_rotate_local_typed!(id::Symbol, O::PauliSum{N,T}, G, θ::Real, workers) where {N,T}
-    _cos = cos(θ)
-    _sin = 1im*sin(θ)
-    stage = Dict(pid => PauliSum(N, T) for pid in workers)
-    for p in collect(keys(O))
+
+# contiguous chunk ranges of 1:n split into k parts (some may be empty if k>n)
+function _dps_chunk_ranges(n::Int, k::Int)
+    sz = cld(n, k)
+    return [((c-1)*sz + 1):min(c*sz, n) for c in 1:k]
+end
+
+# read-only over O; fill this chunk's sin buckets and record its anticommuting keys.
+function _rotate_chunk!(O::PauliSum{N,T}, ks, range, G, _sin, workers, stage, coskeys) where {N,T}
+    for idx in range
+        p = ks[idx]
         commute(p, G) && continue
         c = O[p]
         tmp = c * _sin * G * p          # sin-branch Pauli  i·sin·c·(G p)
         qpb = PauliBasis(tmp)
         dest = stage[_pauli_owner(qpb, workers)]
         dest[qpb] = get(dest, qpb, zero(T)) + coeff(tmp)
-        O[p] = c * _cos                 # cos-branch, in place
+        push!(coskeys, p)
     end
-    _DPS_STAGE[id] = stage
+    return nothing
+end
+
+function _dps_rotate_local_typed!(id::Symbol, O::PauliSum{N,T}, G, θ::Real, workers,
+                                  threaded::Bool) where {N,T}
+    _cos = cos(θ)
+    _sin = 1im*sin(θ)
+    ks = collect(keys(O))
+    nt = (threaded && Threads.nthreads() > 1 && length(ks) > 1) ? Threads.nthreads() : 1
+
+    tstage = [Dict(pid => PauliSum(N, T) for pid in workers) for _ in 1:nt]
+    tcos   = [Vector{eltype(ks)}() for _ in 1:nt]
+
+    if nt == 1
+        _rotate_chunk!(O, ks, eachindex(ks), G, _sin, workers, tstage[1], tcos[1])
+    else
+        ranges = _dps_chunk_ranges(length(ks), nt)
+        @sync for c in 1:nt
+            Threads.@spawn _rotate_chunk!(O, ks, ranges[c], G, _sin, workers, tstage[c], tcos[c])
+        end
+    end
+
+    # cos-scale anticommuting terms in place (serial: no concurrent Dict writes)
+    for c in 1:nt, p in tcos[c]
+        O[p] = O[p] * _cos
+    end
+
+    # merge the per-thread staging into one per-destination stage
+    if nt == 1
+        _DPS_STAGE[id] = tstage[1]
+    else
+        stage = Dict(pid => PauliSum(N, T) for pid in workers)
+        for c in 1:nt, pid in workers
+            _dps_merge_bucket!(stage[pid], tstage[c][pid])
+        end
+        _DPS_STAGE[id] = stage
+    end
     return nothing
 end
 
@@ -185,12 +230,15 @@ _dps_clear_stage!(id::Symbol) = (delete!(_DPS_STAGE, id); nothing)
     evolve!(dO::DistributedPauliSum, G::PauliBasis, θ::Real)
 
 One distributed Heisenberg-picture rotation, in place. `G` is broadcast to all
-workers; new sin-branch terms are routed to their owners and merged.
+workers; new sin-branch terms are routed to their owners and merged. `threaded`
+enables Julia-thread parallelism of each worker's local rotation (start the
+workers with `--threads=N`).
 """
-function evolve!(dO::DistributedPauliSum{N,T}, G::PauliBasis{N}, θ::Real) where {N,T}
+function evolve!(dO::DistributedPauliSum{N,T}, G::PauliBasis{N}, θ::Real;
+                 threaded::Bool=true) where {N,T}
     ws = dO.workers
     @sync for pid in ws
-        @async Distributed.remotecall_fetch(_dps_rotate_local!, pid, dO.id, G, θ, ws)
+        @async Distributed.remotecall_fetch(_dps_rotate_local!, pid, dO.id, G, θ, ws, threaded)
     end
     @sync for pid in ws
         @async Distributed.remotecall_fetch(_dps_merge_incoming!, pid, dO.id, ws)
@@ -221,10 +269,11 @@ Apply a sequence of rotations (e.g. from `trotterize`) to a sharded sum, clippin
 after each rotation when `truncation_thresh > 0`. Mutates and returns `dO`.
 """
 function evolve!(dO::DistributedPauliSum{N,T}, generators::Vector{<:PauliBasis{N}},
-                 angles::Vector{<:Real}; truncation_thresh::Real=0.0) where {N,T}
+                 angles::Vector{<:Real}; truncation_thresh::Real=0.0,
+                 threaded::Bool=true) where {N,T}
     length(generators) == length(angles) || throw(DimensionMismatch("generators and angles must match"))
     for (G, θ) in zip(generators, angles)
-        evolve!(dO, G, θ)
+        evolve!(dO, G, θ; threaded=threaded)
         truncation_thresh > 0 && coeff_clip!(dO, truncation_thresh)
     end
     return dO

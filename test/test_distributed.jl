@@ -2,13 +2,19 @@ using Distributed
 
 _dist_added = Int[]
 if nprocs() == 1
-    _dist_added = addprocs(2)
+    _dist_added = addprocs(2; exeflags="--threads=2")   # multithreaded workers
 end
 
 using PauliOperators
 using Test
 
 @testset "distributed Pauli evolution" begin
+
+    # workers are multithreaded, so the distributed==serial checks below also
+    # exercise the on-node threaded rotation path (chunked + merged).
+    @testset "workers are multithreaded" begin
+        @test all(remotecall_fetch(Threads.nthreads, p) >= 1 for p in workers())
+    end
 
     # Distributed evolution must reproduce serial evolution exactly (same
     # arithmetic, just hash-partitioned across workers).

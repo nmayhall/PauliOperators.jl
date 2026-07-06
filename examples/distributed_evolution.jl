@@ -1,20 +1,27 @@
-# Multinode (across-node) Sparse Pauli Dynamics.
+# Multinode (across-node) Sparse Pauli Dynamics, with on-node multithreading.
 #
-# Run with several worker processes, e.g. locally:
-#     julia --project -p 4 examples/distributed_evolution.jl
+# Two levels of parallelism:
+#   - across nodes: one worker per node, terms sharded by hash (memory scales).
+#   - inside a node: each worker's rotation is threaded over its local terms.
+#
+# Run locally, e.g.:  julia --project examples/distributed_evolution.jl
 # or across nodes by adding SSH/SLURM workers before `using PauliOperators`.
 #
 # Each worker owns the Pauli terms that hash to it and stores an ordinary local
-# PauliSum. Every Trotter rotation cos-scales local terms in place and routes the
-# new sin-branch terms (G*p) to their owner workers, then clips with a global
+# PauliSum. Every Trotter rotation cos-scales local terms and routes the new
+# sin-branch terms (G*p) to their owner workers, then clips with a global
 # threshold. Nothing is gathered on the master, so the sparse Pauli sum can exceed
 # a single node's memory (target: a 10x10x10 = 1000-qubit Heisenberg lattice).
 
 using Distributed
 if nprocs() == 1
-    addprocs(4)          # or add remote/SLURM workers here
+    # one worker per node, each with several Julia threads (--threads=N).
+    # On a cluster, replace with addprocs(hosts; exeflags="--project=... --threads=N").
+    addprocs(4; exeflags="--threads=4")
 end
 using PauliOperators
+@info "workers / threads-per-worker" workers() =
+    [remotecall_fetch(Threads.nthreads, p) for p in workers()]
 
 # ---- build a 3D Heisenberg Trotter step as a list of 2-local generators ----
 # Lattice: Lx x Ly x Lz spins, nearest-neighbour XX+YY+ZZ couplings.

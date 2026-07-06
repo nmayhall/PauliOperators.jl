@@ -13,11 +13,29 @@ function expectation_value(p::Union{PauliBasis{N}, Pauli{N}}, d::Union{Dyad{N}, 
 end
 
 function expectation_value(p::PauliSum{N,T}, d::Union{Ket{N}, Dyad{N}, DyadBasis{N}}) where {N,T}
-    eval = zero(T)
-    for (pi,ci) in p
-        eval += expectation_value(pi, d) * ci
+    nt = reduction_nthreads(length(p))
+    if nt == 1
+        eval = zero(T)
+        for (pi,ci) in p
+            eval += expectation_value(pi, d) * ci
+        end
+        return eval
     end
-    return eval 
+    # threaded term reduction: per-thread partial sums, then combine
+    prs = collect(p)
+    partials = zeros(T, nt)
+    ranges = chunk_ranges(length(prs), nt)
+    @sync for c in 1:nt
+        Threads.@spawn begin
+            s = zero(T)
+            @inbounds for idx in ranges[c]
+                pr = prs[idx]
+                s += expectation_value(pr.first, d) * pr.second
+            end
+            partials[c] = s
+        end
+    end
+    return sum(partials)
 end
 
 function expectation_value(p::Union{PauliBasis{N}, Pauli{N}}, d::DyadSum{N,T}) where {N,T}
@@ -60,11 +78,28 @@ function matrix_element(b::Bra{N}, p::PauliBasis{N}, k::Ket{N}) where N
 end
 
 function matrix_element(b::Bra{N}, p::PauliSum{N,T}, k::Ket{N}) where {N,T}
-    eval = zero(T)
-    for (pi,ci) in p
-        eval += matrix_element(b, pi, k) * ci
+    nt = reduction_nthreads(length(p))
+    if nt == 1
+        eval = zero(T)
+        for (pi,ci) in p
+            eval += matrix_element(b, pi, k) * ci
+        end
+        return eval
     end
-    return eval 
+    prs = collect(p)
+    partials = zeros(T, nt)
+    ranges = chunk_ranges(length(prs), nt)
+    @sync for c in 1:nt
+        Threads.@spawn begin
+            s = zero(T)
+            @inbounds for idx in ranges[c]
+                pr = prs[idx]
+                s += matrix_element(b, pr.first, k) * pr.second
+            end
+            partials[c] = s
+        end
+    end
+    return sum(partials)
 end
 
 function matrix_element(b::KetSum{N}, p::PauliBasis{N}, k::KetSum{N}) where {N}

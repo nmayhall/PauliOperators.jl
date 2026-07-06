@@ -23,6 +23,22 @@ function _define_wide_uint(bits::Integer)
     return nothing
 end
 
+# ---- shared threading helpers (used by threaded PauliSum reductions/rotations) ----
+
+# Split 1:n into k contiguous ranges (trailing ranges may be empty if k > n).
+function chunk_ranges(n::Integer, k::Integer)
+    sz = cld(n, k)
+    return [((c-1)*sz + 1):min(c*sz, n) for c in 1:k]
+end
+
+# Number of threads to use for a term-wise reduction/loop over `n` Pauli terms.
+# Returns 1 (serial) unless there are enough terms to amortize the thread overhead.
+function reduction_nthreads(n::Integer; min_per_thread::Integer=4096)
+    nt = Threads.nthreads()
+    (nt > 1 && n >= 2*min_per_thread) || return 1
+    return min(nt, max(1, cld(n, min_per_thread)))
+end
+
 function get_on_bits(x::T) where T<:Integer
     N = count_ones(x)
     inds = Vector{Int}(undef, N)

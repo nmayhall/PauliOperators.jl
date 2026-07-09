@@ -42,10 +42,18 @@ timing all three. `A` (or its row count `r`) controls the engine's rank
 map; by default a random map with ~16 shards per thread is drawn.
 
 Along the way each path records its live Pauli count (the peak is a table
-row) and the expectation value ⟨0…0|O(t)|0…0⟩ at every window boundary;
-the traces are written to `<plotfile>.csv` and plotted to `plotfile` when
-Plots.jl is available (`plotfile=nothing` disables both). The cheap
-per-boundary recordings are included in every path's timing.
+row) and the expectation value ⟨0…0|O(t)|0…0⟩; the traces are written to
+`<plotfile>.csv` and plotted to `plotfile` when Plots.jl is available
+(`plotfile=nothing` disables both). The cheap recordings are included in
+every path's timing.
+
+`record_every` sets the sampling stride in rotations (default: every
+window boundary). Mid-Trotter-step samples oscillate — only some of the
+non-commuting layers have been applied yet — so for a smooth physical
+trace pass one full Trotter step (e.g. `length(gens) ÷ n_trotter`),
+ideally a multiple of `window` so samples land exactly on merge
+boundaries (the engine can only be observed there; off-multiple strides
+snap to the next boundary).
 
 Returns a NamedTuple with per-path timings, GC statistics, peak/trace
 data, and each engine's relative deviation from the old path's result
@@ -64,6 +72,7 @@ function compare_old_vs_new(O::PauliSum{N}, gens::Vector{PauliBasis{N}},
                             rebalance_threshold::Real=1.25,
                             warmup::Bool=true,
                             plotfile::Union{Nothing,String}="old_vs_new_expectation.png",
+                            record_every::Union{Nothing,Int}=nothing,
                             engine_kwargs...) where {N}
     if A === nothing
         r === nothing && (r = max(2, round(Int, log2(max(nthreads, 2))) + 4))
@@ -72,7 +81,16 @@ function compare_old_vs_new(O::PauliSum{N}, gens::Vector{PauliBasis{N}},
     L = length(gens)
     nwarm = min(2window, L)
     ψ0 = Ket(N, 0)
+    stride = record_every === nothing ? window : record_every
+    # sample points: window boundaries (the engine is only observable on
+    # merged state), thinned to the first boundary at/after each stride
     boundaries = [i for i in 1:L if i % window == 0 || i == L]
+    recpts = Int[]
+    for b in boundaries
+        (isempty(recpts) ? b : b - recpts[end]) >= stride && push!(recpts, b)
+    end
+    (isempty(recpts) || recpts[end] != L) && push!(recpts, L)
+    recset = Set(recpts)
 
     # ---- old path: Dict PauliSum, truncate! after every rotation ----
     # (this explicit loop is exactly what evolve(O, gens, angs; truncation)
@@ -86,8 +104,7 @@ function compare_old_vs_new(O::PauliSum{N}, gens::Vector{PauliBasis{N}},
         truncate!(Oref, truncation)
         n = length(Oref)
         n > peak_old && (peak_old = n)
-        (i % window == 0 || i == L) &&
-            push!(exp_old, real(expectation_value(Oref, ψ0)))
+        i in recset && push!(exp_old, real(expectation_value(Oref, ψ0)))
     end
 
     # ---- new engine, serial and threaded ----
@@ -106,12 +123,12 @@ function compare_old_vs_new(O::PauliSum{N}, gens::Vector{PauliBasis{N}},
         cnts = [WindowCounters(length(cc.window_subgroups)) for cc in ccircs]
         peak = length(S)
         exps = Float64[]
-        st = @timed for (cc, cnt) in zip(ccircs, cnts)
+        st = @timed for (rng, cc, cnt) in zip(chunks, ccircs, cnts)
             evolve!(S, cc; truncation, local_truncation,
                     counters=cnt, rebalance_threshold)
             n = length(S)
             n > peak && (peak = n)
-            push!(exps, real(expectation_value(S, ψ0)))
+            last(rng) in recset && push!(exps, real(expectation_value(S, ψ0)))
         end
         push!(engines, (nthreads=nt, wall=st.time, gctime=st.gctime,
                         bytes=st.bytes, nterms=length(S), peak=peak, exps=exps,
@@ -147,7 +164,7 @@ function compare_old_vs_new(O::PauliSum{N}, gens::Vector{PauliBasis{N}},
 
     res = (old=(wall=old.time, gctime=old.gctime, bytes=old.bytes,
                 peak=peak_old, exps=exp_old, result=Oref),
-           engines=engines, boundaries=boundaries)
+           engines=engines, boundaries=recpts)
     plotfile === nothing || save_expectation_plot(res; file=plotfile)
     return res
 end
@@ -195,10 +212,10 @@ end
 if abspath(PROGRAM_FILE) == @__FILE__
     Lx     = length(ARGS) >= 1 ? parse(Int, ARGS[1]) : 10
     Ly     = length(ARGS) >= 2 ? parse(Int, ARGS[2]) : 10 
-    nsteps = length(ARGS) >= 3 ? parse(Int, ARGS[3]) : 50
-    window = length(ARGS) >= 4 ? parse(Int, ARGS[4]) : 1
+    nsteps = length(ARGS) >= 3 ? parse(Int, ARGS[3]) : 100
+    window = length(ARGS) >= 4 ? parse(Int, ARGS[4]) : 8
     alpha  = length(ARGS) >= 5 ? parse(Float64, ARGS[5]) : 0.2
-    thresh = length(ARGS) >= 6 ? parse(Float64, ARGS[6]) : 1e-6
+    thresh = length(ARGS) >= 6 ? parse(Float64, ARGS[6]) : 1e-7
 
     N = Lx * Ly
     N <= 127 || error("Lx·Ly = $N exceeds the 127-qubit limit")
@@ -211,8 +228,8 @@ if abspath(PROGRAM_FILE) == @__FILE__
         (jx <= Lx && jy <= Ly) || continue
         i, j = site(ix, iy), site(jx, jy)
         H[PauliBasis(Pauli(N, X=[i, j]))] = 1.0
-        H[PauliBasis(Pauli(N, Y=[i, j]))] = 0.9
-        H[PauliBasis(Pauli(N, Z=[i, j]))] = 1.1
+        H[PauliBasis(Pauli(N, Y=[i, j]))] = 1.0
+        H[PauliBasis(Pauli(N, Z=[i, j]))] = 1.0
     end
     gens, angs = trotterize(H, 0.05, n_trotter=nsteps, order=1)
 
@@ -225,5 +242,6 @@ if abspath(PROGRAM_FILE) == @__FILE__
                        window,
                     #    truncation=CoeffTruncation(thresh),
                        truncation=WeightDampedTruncation(alpha, thresh),
+                       record_every=length(gens) ÷ nsteps,   # sample only completed Trotter steps
                        min_capacity=1 << 14, append_factor=2.0)
 end

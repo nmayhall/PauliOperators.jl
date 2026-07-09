@@ -54,6 +54,7 @@ module PauliOperators
     export expectation_value
     export matrix_element
     export inner_product, inner_product_threaded
+    export mult_threaded
 
     export symplectic_phase
     export coeff

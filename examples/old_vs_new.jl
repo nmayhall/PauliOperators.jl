@@ -41,9 +41,16 @@ Evolve `O` under `(gens, angs)` through the original Dict-based serial
 timing all three. `A` (or its row count `r`) controls the engine's rank
 map; by default a random map with ~16 shards per thread is drawn.
 
-Returns a NamedTuple with per-path timings, GC statistics, and each
-engine's relative deviation from the old path's result (zero at
-`window = 1` with deterministic truncation; cadence-sized otherwise).
+Along the way each path records its live Pauli count (the peak is a table
+row) and the expectation value ⟨0…0|O(t)|0…0⟩ at every window boundary;
+the traces are written to `<plotfile>.csv` and plotted to `plotfile` when
+Plots.jl is available (`plotfile=nothing` disables both). The cheap
+per-boundary recordings are included in every path's timing.
+
+Returns a NamedTuple with per-path timings, GC statistics, peak/trace
+data, and each engine's relative deviation from the old path's result
+(zero at `window = 1` with deterministic truncation; cadence-sized
+otherwise).
 """
 function compare_old_vs_new(O::PauliSum{N}, gens::Vector{PauliBasis{N}},
                             angs::Vector{<:Real};
@@ -56,37 +63,59 @@ function compare_old_vs_new(O::PauliSum{N}, gens::Vector{PauliBasis{N}},
                             T::Type{<:Number}=Float64,
                             rebalance_threshold::Real=1.25,
                             warmup::Bool=true,
+                            plotfile::Union{Nothing,String}="old_vs_new_expectation.png",
                             engine_kwargs...) where {N}
     if A === nothing
         r === nothing && (r = max(2, round(Int, log2(max(nthreads, 2))) + 4))
         A = rand(RankMap{N}, r)
     end
-    circ = compile(A, gens, angs; window)
-    nw = length(circ.window_subgroups)
-    nwarm = min(2window, length(gens))
+    L = length(gens)
+    nwarm = min(2window, L)
+    ψ0 = Ket(N, 0)
+    boundaries = [i for i in 1:L if i % window == 0 || i == L]
 
     # ---- old path: Dict PauliSum, truncate! after every rotation ----
+    # (this explicit loop is exactly what evolve(O, gens, angs; truncation)
+    # does internally, unrolled so population and ⟨0|O|0⟩ can be watched)
     warmup && evolve(O, gens[1:nwarm], angs[1:nwarm]; truncation)
-    old = @timed evolve(O, gens, angs; truncation)
-    Oref = old.value
+    peak_old = length(O)
+    exp_old = Float64[]
+    Oref = deepcopy(O)
+    old = @timed for i in 1:L
+        evolve!(Oref, gens[i], angs[i])
+        truncate!(Oref, truncation)
+        n = length(Oref)
+        n > peak_old && (peak_old = n)
+        (i % window == 0 || i == L) &&
+            push!(exp_old, real(expectation_value(Oref, ψ0)))
+    end
 
     # ---- new engine, serial and threaded ----
+    # driven in window-sized chunks: every chunk ends on a merge boundary
+    # the full circuit would also have, so the cadence is identical
+    chunks = [lo:min(lo + window - 1, L) for lo in 1:window:L]
+    ccircs = [compile(A, gens[rng], angs[rng]; window) for rng in chunks]
+    wcirc = compile(A, gens[1:nwarm], angs[1:nwarm]; window)
     engines = NamedTuple[]
     for nt in unique((1, min(nthreads, Threads.nthreads())))
         build() = ShardedPauliSum(O, A; T, nthreads=nt, engine_kwargs...)
-        if warmup
-            wcirc = compile(A, gens[1:nwarm], angs[1:nwarm]; window)
-            evolve!(build(), wcirc; truncation, local_truncation,
-                    counters=WindowCounters(length(wcirc.window_subgroups)),
-                    rebalance_threshold)
-        end
+        warmup && evolve!(build(), wcirc; truncation, local_truncation,
+                          counters=WindowCounters(length(wcirc.window_subgroups)),
+                          rebalance_threshold)
         S = build()
-        cnt = WindowCounters(nw)
-        st = @timed evolve!(S, circ; truncation, local_truncation,
-                            counters=cnt, rebalance_threshold)
+        cnts = [WindowCounters(length(cc.window_subgroups)) for cc in ccircs]
+        peak = length(S)
+        exps = Float64[]
+        st = @timed for (cc, cnt) in zip(ccircs, cnts)
+            evolve!(S, cc; truncation, local_truncation,
+                    counters=cnt, rebalance_threshold)
+            n = length(S)
+            n > peak && (peak = n)
+            push!(exps, real(expectation_value(S, ψ0)))
+        end
         push!(engines, (nthreads=nt, wall=st.time, gctime=st.gctime,
-                        bytes=st.bytes, counters=cnt, nterms=length(S),
-                        early_merges=sum(cnt.early_merges),
+                        bytes=st.bytes, nterms=length(S), peak=peak, exps=exps,
+                        early_merges=sum(c -> sum(c.early_merges), cnts),
                         reldiff=norm(PauliSum(S) - Oref) / max(norm(Oref), eps())))
     end
 
@@ -104,6 +133,7 @@ function compare_old_vs_new(O::PauliSum{N}, gens::Vector{PauliBasis{N}},
     prow("GC time (s)", "%16.4f", [old.gctime; [e.gctime for e in engines]])
     prow("allocated (MB)", "%16.1f", [old.bytes / 1e6; [e.bytes / 1e6 for e in engines]])
     prow("final terms", "%16d", [length(Oref); [e.nterms for e in engines]])
+    prow("peak terms", "%16d", [peak_old; [e.peak for e in engines]])
     prow("rel diff vs old", "%16.2e", [0.0; [e.reldiff for e in engines]])
     for e in engines
         @printf("speedup vs old (nt=%d): %.2fx\n", e.nthreads, old.time / e.wall)
@@ -115,8 +145,50 @@ function compare_old_vs_new(O::PauliSum{N}, gens::Vector{PauliBasis{N}},
     any(e -> e.early_merges > 0, engines) &&
         println("note: early merges fired; raise min_capacity/append_factor")
 
-    return (old=(wall=old.time, gctime=old.gctime, bytes=old.bytes, result=Oref),
-            engines=engines)
+    res = (old=(wall=old.time, gctime=old.gctime, bytes=old.bytes,
+                peak=peak_old, exps=exp_old, result=Oref),
+           engines=engines, boundaries=boundaries)
+    plotfile === nothing || save_expectation_plot(res; file=plotfile)
+    return res
+end
+
+"""
+    save_expectation_plot(res; file="old_vs_new_expectation.png")
+
+Write the ⟨0…0|O(t)|0…0⟩ traces from a `compare_old_vs_new` result to
+`<file>.csv`, and render them to `file` if Plots.jl is installed.
+"""
+function save_expectation_plot(res; file::String="old_vs_new_expectation.png")
+    csv = first(splitext(file)) * ".csv"
+    open(csv, "w") do io
+        println(io, "rotation,old_dict," *
+                    join(("sharded_nt$(e.nthreads)" for e in res.engines), ","))
+        for (k, i) in enumerate(res.boundaries)
+            println(io, "$i,$(res.old.exps[k])," *
+                        join((e.exps[k] for e in res.engines), ","))
+        end
+    end
+    println("expectation traces written to $csv")
+    ok = try
+        @eval import Plots
+        true
+    catch
+        @warn "Plots.jl not installed — skipping the figure (CSV written)"
+        false
+    end
+    ok || return csv
+    Base.invokelatest() do
+        p = Plots.plot(xlabel="rotation", ylabel="⟨0…0| O(t) |0…0⟩",
+                       title="old vs new expectation trace", legend=:topright)
+        Plots.plot!(p, res.boundaries, res.old.exps, label="old dict", lw=3)
+        for e in res.engines
+            Plots.plot!(p, res.boundaries, e.exps,
+                        label="sharded nt=$(e.nthreads)", ls=:dash, lw=1.5)
+        end
+        Plots.savefig(p, file)
+        println("expectation plot written to $file")
+    end
+    return file
 end
 
 # ---------------- demo when run as a script ----------------
@@ -124,9 +196,9 @@ if abspath(PROGRAM_FILE) == @__FILE__
     Lx     = length(ARGS) >= 1 ? parse(Int, ARGS[1]) : 10
     Ly     = length(ARGS) >= 2 ? parse(Int, ARGS[2]) : 10 
     nsteps = length(ARGS) >= 3 ? parse(Int, ARGS[3]) : 50
-    window = length(ARGS) >= 4 ? parse(Int, ARGS[4]) : 10
-    alpha  = length(ARGS) >= 5 ? parse(Float64, ARGS[5]) : 0.1
-    thresh = length(ARGS) >= 6 ? parse(Float64, ARGS[6]) : 1e-8
+    window = length(ARGS) >= 4 ? parse(Int, ARGS[4]) : 1
+    alpha  = length(ARGS) >= 5 ? parse(Float64, ARGS[5]) : 0.2
+    thresh = length(ARGS) >= 6 ? parse(Float64, ARGS[6]) : 1e-6
 
     N = Lx * Ly
     N <= 127 || error("Lx·Ly = $N exceeds the 127-qubit limit")

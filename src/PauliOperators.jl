@@ -4,11 +4,13 @@ module PauliOperators
     using LinearAlgebra
     using StaticArrays
     using Random
+    using MPI
 
     include("helpers.jl")
     include("type_PauliBasis.jl")
     include("type_Pauli.jl")
     include("type_PauliSum.jl")
+    include("type_RankMap.jl")
     include("type_Ket.jl")
     include("type_KetSum.jl")
     include("type_DyadBasis.jl")
@@ -24,7 +26,11 @@ module PauliOperators
     include("commutator.jl")
     include("clip.jl")
     include("truncation.jl")
+    include("type_BinnedPauliSum.jl")
     include("evolve.jl")
+    include("binned_evolve.jl")
+    include("type_DistributedPauliSum.jl")
+    include("distributed_evolve.jl")
     include("decompose.jl")
     include("gates.jl")
     include("analysis.jl")
@@ -102,4 +108,17 @@ module PauliOperators
 
     # Transformations
     export jordan_wigner, boson_to_paulis
+
+    # Distributed propagation (GF(2) rank maps and binned sums)
+    export RankMap, RankRow
+    export bin_index, bin_shift, nbits, nbins
+    export BinnedPauliSum
+    export rebin!, check_binning, bin_histogram
+    export nonempty_bins, owned_bins, default_bin_owner
+    export CompiledCircuit, compile, gf2_span, merge_bins!
+    export PropagationCounters
+    export DistributedPauliSum, PauliRecord
+    export pairwise_exchange!, check_ownership, gather
+    export protected_row_basis, rand_valid_row, greedy_bisection_rankmap
+    export swap_row!, rebalance_bins!
 end

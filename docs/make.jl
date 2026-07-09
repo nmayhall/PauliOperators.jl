@@ -18,6 +18,7 @@ makedocs(;
         "Home" => "index.md",
         "Types" => "types.md",
         "Funcitons" => "functions.md",
+        "Sharded Engine" => "sharded_engine.md",
     ],
 )
 

@@ -189,6 +189,7 @@ function ShardedPauliSum(O::PauliSum{N,T0}, A::RankMap{N};
                          nthreads::Int=1,
                          capacity_factor::Real=4.0,
                          append_factor::Real=1.0,
+                         min_capacity::Int=16,
                          debug::Bool=false,
                          imag_tol::Real=1e-10) where {N,T0}
     nthreads >= 1 || throw(ArgumentError("nthreads must be >= 1"))
@@ -201,7 +202,9 @@ function ShardedPauliSum(O::PauliSum{N,T0}, A::RankMap{N};
         counts[bin_index(A, p) + 1] += 1
     end
     heaviest = max(maximum(counts; init=0), cld(length(O), nsh), 1)
-    live_cap = max(16, ceil(Int, capacity_factor * heaviest))
+    # min_capacity floors the per-shard buffers: essential when evolving a
+    # small observable whose population will grow far beyond length(O)
+    live_cap = max(min_capacity, 16, ceil(Int, capacity_factor * heaviest))
     seg_size = max(16, cld(ceil(Int, append_factor * live_cap), nthreads))
 
     row_z = W[r.z % W for r in A.rows]

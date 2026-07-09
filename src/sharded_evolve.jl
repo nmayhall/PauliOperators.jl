@@ -114,6 +114,27 @@ function inner_product(S1::ShardedPauliSum{N,W,T}, S2::ShardedPauliSum{N,W,T}) w
     return out
 end
 
+"""
+    greedy_bisection_rankmap(S::ShardedPauliSum, r; protected, ncandidates, rng)
+
+Draw a balance-optimized `RankMap` against the engine's live population
+(see the `Vector{PauliBasis}` method). Use it to build a better-balanced
+replacement engine: construct a new `ShardedPauliSum` with the returned map
+(the sharded engine deliberately has no in-place `swap_row!` — ownership
+rebalancing is the cheap knob; changing `A` is a reconstruction).
+"""
+function greedy_bisection_rankmap(S::ShardedPauliSum{N,W,T}, r::Int; kw...) where {N,W,T}
+    terms = Vector{PauliBasis{N}}(undef, length(S))
+    i = 0
+    for sh in S.shards
+        for k in 1:sh.n
+            i += 1
+            terms[i] = _unpack(PauliBasis{N}, sh.z[k], sh.x[k])
+        end
+    end
+    return greedy_bisection_rankmap(terms, r; kw...)
+end
+
 _measure(S::ShardedPauliSum, ::NoCorrection) = nothing
 _measure(S::ShardedPauliSum{N,W,T}, corr::EnergyCorrection{N}) where {N,W,T} =
     (energy = real(expectation_value(S, corr.ψ)),)

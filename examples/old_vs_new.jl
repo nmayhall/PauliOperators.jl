@@ -51,7 +51,12 @@ row) and two observable traces:
 - `⟨ψ|O(t)|ψ⟩` for the computational-basis ket `state` (default `|0…0⟩`;
   NOTE: the fully polarized state is an exact eigenstate of any
   Heisenberg/XXZ model, so its trace is constant up to Trotter error —
-  pass e.g. a Néel ket for nontrivial dynamics).
+  pass e.g. a Néel ket for nontrivial dynamics), and
+- for every `label => Q` pair in `correlators`, the dynamical
+  cross-correlator `tr(O(t)·Q) / 2^N` — the coefficient of the Pauli
+  string `Q` in `O(t)` (e.g. `Q = X₁X₂` measures how much X₁X₂ character
+  the evolving operator develops; with `O(0) = X₁` and `Q = X₂` it is the
+  infinite-temperature two-point function ⟨X₁(t)X₂(0)⟩).
 
 Traces are written to `<plotfile>.csv` and plotted to `plotfile` when
 Plots.jl is available (`plotfile=nothing` disables both). The cheap
@@ -84,6 +89,7 @@ function compare_old_vs_new(O::PauliSum{N}, gens::Vector{PauliBasis{N}},
                             plotfile::Union{Nothing,String}="old_vs_new_expectation.png",
                             record_every::Union{Nothing,Int}=nothing,
                             state::Union{Nothing,Ket{N}}=nothing,
+                            correlators::AbstractVector{<:Pair}=Pair{String,PauliBasis{N}}[],
                             engine_kwargs...) where {N}
     if A === nothing
         r === nothing && (r = max(2, round(Int, log2(max(nthreads, 2))) + 4))
@@ -94,6 +100,8 @@ function compare_old_vs_new(O::PauliSum{N}, gens::Vector{PauliBasis{N}},
     ψ0 = state === nothing ? Ket(N, 0) : state
     refterms = collect(O)                      # O(0), for the autocorrelation
     norm0sq = sum(abs2(c) for (_, c) in refterms)
+    qlabels = String[string(first(q)) for q in correlators]
+    qops = PauliBasis{N}[last(q) for q in correlators]
     stride = record_every === nothing ? window : record_every
     # sample points: window boundaries (the engine is only observable on
     # merged state), thinned to the first boundary at/after each stride
@@ -112,6 +120,7 @@ function compare_old_vs_new(O::PauliSum{N}, gens::Vector{PauliBasis{N}},
     peak_old = length(O)
     exp_old = Float64[]
     corr_old = Float64[]
+    xcorr_old = [Float64[] for _ in qops]
     Oref = deepcopy(O)
     old = @timed for i in 1:L
         evolve!(Oref, gens[i], angs[i])
@@ -122,6 +131,9 @@ function compare_old_vs_new(O::PauliSum{N}, gens::Vector{PauliBasis{N}},
             push!(exp_old, real(expectation_value(Oref, ψ0)))
             push!(corr_old, real(sum(conj(c0) * get(Oref, p, zero(c0))
                                      for (p, c0) in refterms)) / norm0sq)
+            for (k, Q) in enumerate(qops)
+                push!(xcorr_old[k], real(get(Oref, Q, 0.0)))
+            end
         end
     end
 
@@ -142,6 +154,7 @@ function compare_old_vs_new(O::PauliSum{N}, gens::Vector{PauliBasis{N}},
         peak = length(S)
         exps = Float64[]
         corrs = Float64[]
+        xcorrs = [Float64[] for _ in qops]
         st = @timed for (rng, cc, cnt) in zip(chunks, ccircs, cnts)
             evolve!(S, cc; truncation, local_truncation,
                     counters=cnt, rebalance_threshold)
@@ -150,11 +163,14 @@ function compare_old_vs_new(O::PauliSum{N}, gens::Vector{PauliBasis{N}},
             if last(rng) in recset
                 push!(exps, real(expectation_value(S, ψ0)))
                 push!(corrs, real(sum(conj(c0) * S[p] for (p, c0) in refterms)) / norm0sq)
+                for (k, Q) in enumerate(qops)
+                    push!(xcorrs[k], real(S[Q]))
+                end
             end
         end
         push!(engines, (nthreads=nt, wall=st.time, gctime=st.gctime,
                         bytes=st.bytes, nterms=length(S), peak=peak,
-                        exps=exps, corrs=corrs,
+                        exps=exps, corrs=corrs, xcorrs=xcorrs,
                         early_merges=sum(c -> sum(c.early_merges), cnts),
                         reldiff=norm(PauliSum(S) - Oref) / max(norm(Oref), eps())))
     end
@@ -186,8 +202,9 @@ function compare_old_vs_new(O::PauliSum{N}, gens::Vector{PauliBasis{N}},
         println("note: early merges fired; raise min_capacity/append_factor")
 
     res = (old=(wall=old.time, gctime=old.gctime, bytes=old.bytes,
-                peak=peak_old, exps=exp_old, corrs=corr_old, result=Oref),
-           engines=engines, boundaries=recpts)
+                peak=peak_old, exps=exp_old, corrs=corr_old, xcorrs=xcorr_old,
+                result=Oref),
+           engines=engines, boundaries=recpts, qlabels=qlabels)
     plotfile === nothing || save_expectation_plot(res; file=plotfile)
     return res
 end
@@ -201,13 +218,16 @@ to `file` if Plots.jl is installed.
 """
 function save_expectation_plot(res; file::String="old_vs_new_expectation.png")
     csv = first(splitext(file)) * ".csv"
+    nq = length(res.qlabels)
+    pathcols(name) = join(["$(name)_corr"; "$(name)_expval";
+                           ["$(name)_$(q)" for q in res.qlabels]], ",")
+    pathvals(t, k) = join([t.corrs[k]; t.exps[k]; [t.xcorrs[j][k] for j in 1:nq]], ",")
     open(csv, "w") do io
-        println(io, "rotation,old_corr,old_expval," *
-                    join(("sharded_nt$(e.nthreads)_corr,sharded_nt$(e.nthreads)_expval"
-                          for e in res.engines), ","))
+        println(io, "rotation," * pathcols("old") * "," *
+                    join((pathcols("sharded_nt$(e.nthreads)") for e in res.engines), ","))
         for (k, i) in enumerate(res.boundaries)
-            println(io, "$i,$(res.old.corrs[k]),$(res.old.exps[k])," *
-                        join(("$(e.corrs[k]),$(e.exps[k])" for e in res.engines), ","))
+            println(io, "$i," * pathvals(res.old, k) * "," *
+                        join((pathvals(e, k) for e in res.engines), ","))
         end
     end
     println("observable traces written to $csv")
@@ -226,13 +246,25 @@ function save_expectation_plot(res; file::String="old_vs_new_expectation.png")
         pe = Plots.plot(xlabel="rotation", ylabel="⟨ψ| O(t) |ψ⟩",
                         title="state expectation value", legend=:topright)
         Plots.plot!(pe, res.boundaries, res.old.exps, label="old dict", lw=3)
+        px = nq == 0 ? nothing :
+             Plots.plot(ylabel="tr(O(t)·Q) / 2^N",
+                        title="cross-correlators", legend=:topright)
+        for (j, q) in enumerate(res.qlabels)
+            Plots.plot!(px, res.boundaries, res.old.xcorrs[j], label="old $q", lw=3)
+        end
         for e in res.engines
             Plots.plot!(pc, res.boundaries, e.corrs,
                         label="sharded nt=$(e.nthreads)", ls=:dash, lw=1.5)
             Plots.plot!(pe, res.boundaries, e.exps,
                         label="sharded nt=$(e.nthreads)", ls=:dash, lw=1.5)
+            for (j, q) in enumerate(res.qlabels)
+                Plots.plot!(px, res.boundaries, e.xcorrs[j],
+                            label="nt=$(e.nthreads) $q", ls=:dash, lw=1.5)
+            end
         end
-        p = Plots.plot(pc, pe, layout=(2, 1), size=(700, 640))
+        panels = px === nothing ? (pc, pe) : (pc, px, pe)
+        p = Plots.plot(panels...; layout=(length(panels), 1),
+                       size=(700, 320 * length(panels)))
         Plots.savefig(p, file)
         println("observable plot written to $file")
     end
@@ -241,12 +273,12 @@ end
 
 # ---------------- demo when run as a script ----------------
 if abspath(PROGRAM_FILE) == @__FILE__
-    Lx     = length(ARGS) >= 1 ? parse(Int, ARGS[1]) : 10
-    Ly     = length(ARGS) >= 2 ? parse(Int, ARGS[2]) : 10 
-    nsteps = length(ARGS) >= 3 ? parse(Int, ARGS[3]) : 100
+    Lx     = length(ARGS) >= 1 ? parse(Int, ARGS[1]) : 6
+    Ly     = length(ARGS) >= 2 ? parse(Int, ARGS[2]) : 6 
+    nsteps = length(ARGS) >= 3 ? parse(Int, ARGS[3]) : 2000
     window = length(ARGS) >= 4 ? parse(Int, ARGS[4]) : 10
-    alpha  = length(ARGS) >= 5 ? parse(Float64, ARGS[5]) : 0.1
-    thresh = length(ARGS) >= 6 ? parse(Float64, ARGS[6]) : 1e-7
+    alpha  = length(ARGS) >= 5 ? parse(Float64, ARGS[5]) : 0.5
+    thresh = length(ARGS) >= 6 ? parse(Float64, ARGS[6]) : 1e-5
 
     N = Lx * Ly
     N <= 127 || error("Lx·Ly = $N exceeds the 127-qubit limit")
@@ -260,12 +292,9 @@ if abspath(PROGRAM_FILE) == @__FILE__
         i, j = site(ix, iy), site(jx, jy)
         H[PauliBasis(Pauli(N, X=[i, j]))] = 1.0
         H[PauliBasis(Pauli(N, Y=[i, j]))] = 1.0
-        H[PauliBasis(Pauli(N, Z=[i, j]))] = 0.1
+        H[PauliBasis(Pauli(N, Z=[i, j]))] = 2.0
     end
-    gens, angs = trotterize(H, 0.05, n_trotter=nsteps, order=1)
-
-    O = PauliSum(N, Float64)
-    O[PauliBasis(Pauli(N, Z=[site((Lx + 1) ÷ 2, (Ly + 1) ÷ 2)]))] = 1.0  # central Z probe
+    gens, angs = trotterize(H, 0.25, n_trotter=nsteps, order=1)
 
     # Néel (checkerboard) ket: NOT an eigenstate, so ⟨ψ|O(t)|ψ⟩ has real
     # dynamics (the polarized |0…0⟩ is an XXZ eigenstate — constant trace)
@@ -273,9 +302,30 @@ if abspath(PROGRAM_FILE) == @__FILE__
                         for iy in 1:Ly for ix in 1:Lx if isodd(ix + iy);
                         init=Int128(0)))
 
-    trunc = WeightDampedTruncation(alpha,thresh)
+    # SYMMETRY SELECTION RULE for cross-correlators: any XYZ Hamiltonian
+    # commutes with the global spin flip ∏ᵢXᵢ, under which a Pauli string
+    # picks up (-1)^(#Y+#Z). tr(O(t)·Q) is identically zero unless Q has
+    # the same parity as the probe — e.g. tr(Z_c(t)·X₁X₂) ≡ 0 (odd·even).
+    # So: an X probe pairs with X_j targets (⟨X_c(t)X_j⟩), a Z probe with
+    # Z_j targets (⟨Z_c(t)Z_j⟩, spin transport).
+    probe = "Z"                       # "X" or "Z"
+    c0 = site((Lx + 1) ÷ 2, (Ly + 1) ÷ 2)
+    c1 = site((Lx + 1) ÷ 2 + 1, (Ly + 1) ÷ 2)
+    c2 = site(min((Lx + 1) ÷ 2 + 2, Lx), (Ly + 1) ÷ 2)
+    O = PauliSum(N, Float64)
+    if probe == "X"
+        O[PauliBasis(Pauli(N, X=[c0]))] = 1.0
+        targets = ["<X$(c0)(t)X$(c1)>" => PauliBasis(Pauli(N, X=[c1]))]
+        c2 > c1 && push!(targets, "<X$(c0)(t)X$(c2)>" => PauliBasis(Pauli(N, X=[c2])))
+    else
+        O[PauliBasis(Pauli(N, Z=[c0]))] = 1.0
+        targets = ["<Z$(c0)(t)Z$(c1)>" => PauliBasis(Pauli(N, Z=[c1]))]
+        c2 > c1 && push!(targets, "<Z$(c0)(t)Z$(c2)>" => PauliBasis(Pauli(N, Z=[c2])))
+    end
+
     trunc = CoeffTruncation(thresh)
     trunc = WeightTruncation(3)
+    trunc = WeightDampedTruncation(alpha,thresh)
     @show trunc
     @printf("2D Heisenberg %dx%d (N=%d), %d rotations, window=%d\n\n",
             Lx, Ly, N, length(gens), window)
@@ -284,6 +334,10 @@ if abspath(PROGRAM_FILE) == @__FILE__
                     #    truncation=CoeffTruncation(thresh),
                        truncation=trunc,
                        state=ψ_neel,
+                       correlators=targets,
                        record_every=length(gens) ÷ nsteps,   # sample only completed Trotter steps
+                       # parameter-stamped artifacts: concurrent/old runs can
+                       # no longer overwrite each other's plot and CSV
+                       plotfile="old_vs_new_$(probe)_$(Lx)x$(Ly)_n$(nsteps)_w$(window).png",
                        min_capacity=1 << 14, append_factor=2.0)
 end

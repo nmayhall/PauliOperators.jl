@@ -115,11 +115,11 @@ end
 
 # ---------------- demo when run as a script ----------------
 if abspath(PROGRAM_FILE) == @__FILE__
-    N      = length(ARGS) >= 1 ? parse(Int, ARGS[1]) : 24
-    nsteps = length(ARGS) >= 2 ? parse(Int, ARGS[2]) : 6
-    window = length(ARGS) >= 3 ? parse(Int, ARGS[3]) : 8
-    alpha  = length(ARGS) >= 4 ? parse(Float64, ARGS[4]) : 0.25
-    thresh = length(ARGS) >= 5 ? parse(Float64, ARGS[5]) : 1e-9
+    N      = length(ARGS) >= 1 ? parse(Int, ARGS[1]) : 127 
+    nsteps = length(ARGS) >= 2 ? parse(Int, ARGS[2]) : 1000 
+    window = length(ARGS) >= 3 ? parse(Int, ARGS[3]) : 1
+    alpha  = length(ARGS) >= 4 ? parse(Float64, ARGS[4]) : 0.000
+    thresh = length(ARGS) >= 5 ? parse(Float64, ARGS[5]) : 1e-8
 
     Random.seed!(1)
     H = PauliSum(N)

@@ -18,9 +18,10 @@
 # sweeps), and the old path's GC time column shows where the Dict churn
 # goes at scale.
 #
-# Run directly for a Heisenberg-chain demo:
-#   julia --project --threads=8 examples/old_vs_new.jl 32 20 8 0.2 1e-10
-#   (args: N n_trotter window [damping alpha] [coeff thresh])
+# Run directly for a 2D Heisenberg demo (N = Lx·Ly qubits; 2D operator
+# populations grow much faster than a chain, so start small):
+#   julia --project --threads=8 examples/old_vs_new.jl 5 5 20 8 0.1 1e-10
+#   (args: Lx Ly n_trotter window [damping alpha] [coeff thresh])
 
 using PauliOperators
 using LinearAlgebra
@@ -49,7 +50,7 @@ function compare_old_vs_new(O::PauliSum{N}, gens::Vector{PauliBasis{N}},
                             A::Union{Nothing,RankMap{N}}=nothing,
                             r::Union{Nothing,Int}=nothing,
                             nthreads::Int=Threads.nthreads(),
-                            window::Int=8,
+                            window::Int=1,
                             truncation::TruncationStrategy=NoTruncation(),
                             local_truncation::TruncationStrategy=NoTruncation(),
                             T::Type{<:Number}=Float64,
@@ -120,28 +121,37 @@ end
 
 # ---------------- demo when run as a script ----------------
 if abspath(PROGRAM_FILE) == @__FILE__
-    N      = length(ARGS) >= 1 ? parse(Int, ARGS[1]) : 32
-    nsteps = length(ARGS) >= 2 ? parse(Int, ARGS[2]) : 20
-    window = length(ARGS) >= 3 ? parse(Int, ARGS[3]) : 8
-    alpha  = length(ARGS) >= 4 ? parse(Float64, ARGS[4]) : 0.2
-    thresh = length(ARGS) >= 5 ? parse(Float64, ARGS[5]) : 1e-10
+    Lx     = length(ARGS) >= 1 ? parse(Int, ARGS[1]) : 10
+    Ly     = length(ARGS) >= 2 ? parse(Int, ARGS[2]) : 10 
+    nsteps = length(ARGS) >= 3 ? parse(Int, ARGS[3]) : 50
+    window = length(ARGS) >= 4 ? parse(Int, ARGS[4]) : 10
+    alpha  = length(ARGS) >= 5 ? parse(Float64, ARGS[5]) : 0.1
+    thresh = length(ARGS) >= 6 ? parse(Float64, ARGS[6]) : 1e-8
+
+    N = Lx * Ly
+    N <= 127 || error("Lx·Ly = $N exceeds the 127-qubit limit")
+    site(ix, iy) = ix + (iy - 1) * Lx
 
     Random.seed!(1)
     H = PauliSum(N)
-    for i in 1:N-1
-        H[PauliBasis(Pauli(N, X=[i, i+1]))] = 1.0
-        H[PauliBasis(Pauli(N, Y=[i, i+1]))] = 0.9
-        H[PauliBasis(Pauli(N, Z=[i, i+1]))] = 1.1
+    for iy in 1:Ly, ix in 1:Lx, (dx, dy) in ((1, 0), (0, 1))
+        jx, jy = ix + dx, iy + dy
+        (jx <= Lx && jy <= Ly) || continue
+        i, j = site(ix, iy), site(jx, jy)
+        H[PauliBasis(Pauli(N, X=[i, j]))] = 1.0
+        H[PauliBasis(Pauli(N, Y=[i, j]))] = 0.9
+        H[PauliBasis(Pauli(N, Z=[i, j]))] = 1.1
     end
-    gens, angs = trotterize(H, 0.05, n_trotter=nsteps, order=2)
+    gens, angs = trotterize(H, 0.05, n_trotter=nsteps, order=1)
 
     O = PauliSum(N, Float64)
-    O[PauliBasis(Pauli(N, Z=[N ÷ 2]))] = 1.0
+    O[PauliBasis(Pauli(N, Z=[site((Lx + 1) ÷ 2, (Ly + 1) ÷ 2)]))] = 1.0  # central Z probe
 
-    @printf("Heisenberg chain N=%d, %d rotations, window=%d, trunc=WeightDamped(%.3g, %.1e)\n\n",
-            N, length(gens), window, alpha, thresh)
+    @printf("2D Heisenberg %dx%d (N=%d), %d rotations, window=%d, trunc=WeightDamped(%.3g, %.1e)\n\n",
+            Lx, Ly, N, length(gens), window, alpha, thresh)
     compare_old_vs_new(O, gens, angs;
                        window,
+                    #    truncation=CoeffTruncation(thresh),
                        truncation=WeightDampedTruncation(alpha, thresh),
                        min_capacity=1 << 14, append_factor=2.0)
 end

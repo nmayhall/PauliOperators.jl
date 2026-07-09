@@ -28,6 +28,9 @@ module PauliOperators
     include("type_BinnedPauliSum.jl")
     include("evolve.jl")
     include("binned_evolve.jl")
+    include("type_ShardedPauliSum.jl")
+    include("sharded_kernels.jl")
+    include("sharded_evolve.jl")
     include("decompose.jl")
     include("gates.jl")
     include("analysis.jl")
@@ -116,4 +119,9 @@ module PauliOperators
     export PropagationCounters
     export protected_row_basis, rand_valid_row, greedy_bisection_rankmap
     export swap_row!
+
+    # Shared-memory (multithreaded) sharded engine
+    export ShardedPauliSum
+    export check_sharding, merge_shards!
+    export WindowCounters
 end

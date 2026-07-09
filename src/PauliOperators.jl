@@ -53,7 +53,7 @@ module PauliOperators
     export otimes, osum
     export expectation_value
     export matrix_element
-    export inner_product
+    export inner_product, inner_product_threaded
 
     export symplectic_phase
     export coeff
@@ -108,6 +108,6 @@ module PauliOperators
 
     # Multinode (across-node) evolution
     export uinttype
-    export DistributedPauliSum, distribute, collect_paulisum
+    export DistributedPauliSum, distribute, collect_paulisum, evolve_vec!
     export ensure_pauli_workers!, sharded_summary, opnorm2, destroy!
 end

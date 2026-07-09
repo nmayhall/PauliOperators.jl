@@ -200,6 +200,66 @@ function _dps_rotate_local_typed!(id::Symbol, O::PauliSum{N,T}, G, θ::Real, wor
     return nothing
 end
 
+# ---- Vector-staging rotation (opt-in: evolve!(...; staging=:vector)) ----
+# Same math as the Dict-staging rotation, but each thread appends the sin terms
+# to a per-owner Vector instead of inserting into a per-owner Dict. Within one
+# rotation the sin bases G*p are distinct (p -> G*p is injective), so no dedup is
+# needed and a plain push! (no hashing / probing / rehashing of a staging Dict)
+# suffices. The merge/take/clear phases are container-agnostic (they iterate
+# (pb,c) pairs), so only the local rotation changes.
+function _rotate_chunk_vec!(O::PauliSum{N,T}, ks, range, G, _sin, workers, stagevecs, coskeys) where {N,T}
+    single = length(workers) == 1
+    w1 = workers[1]
+    for idx in range
+        p = ks[idx]
+        commute(p, G) && continue
+        c = O[p]
+        tmp = c * _sin * G * p
+        qpb = PauliBasis(tmp)
+        owner = single ? w1 : _pauli_owner(qpb, workers)
+        push!(stagevecs[owner], (qpb, coeff(tmp)))
+        push!(coskeys, p)
+    end
+    return nothing
+end
+
+function _dps_rotate_local_typed_vec!(id::Symbol, O::PauliSum{N,T}, G, θ::Real, workers,
+                                      threaded::Bool) where {N,T}
+    _cos = cos(θ)
+    _sin = 1im*sin(θ)
+    ks = collect(keys(O))
+    nt = (threaded && Threads.nthreads() > 1 && length(ks) > 1) ? Threads.nthreads() : 1
+    VT = Tuple{PauliBasis{N},T}
+    tstage = [Dict(pid => VT[] for pid in workers) for _ in 1:nt]
+    tcos   = [Vector{eltype(ks)}() for _ in 1:nt]
+
+    if nt == 1
+        _rotate_chunk_vec!(O, ks, eachindex(ks), G, _sin, workers, tstage[1], tcos[1])
+    else
+        ranges = _dps_chunk_ranges(length(ks), nt)
+        @sync for c in 1:nt
+            Threads.@spawn _rotate_chunk_vec!(O, ks, ranges[c], G, _sin, workers, tstage[c], tcos[c])
+        end
+    end
+
+    for c in 1:nt, p in tcos[c]
+        O[p] = O[p] * _cos
+    end
+
+    if nt == 1
+        _DPS_STAGE[id] = tstage[1]
+    else
+        stage = Dict(pid => VT[] for pid in workers)
+        for c in 1:nt, pid in workers
+            append!(stage[pid], tstage[c][pid])
+        end
+        _DPS_STAGE[id] = stage
+    end
+    return nothing
+end
+_dps_rotate_local_vec!(id::Symbol, G, θ::Real, workers, threaded::Bool=true) =
+    _dps_rotate_local_typed_vec!(id, _dps_get(id), G, θ, workers, threaded)
+
 # Peer take: worker holding `id`'s staging returns the bucket destined for `dest`.
 function _dps_take_bucket(id::Symbol, dest::Int)
     stage = _DPS_STAGE[id]
@@ -239,6 +299,30 @@ function evolve!(dO::DistributedPauliSum{N,T}, G::PauliBasis{N}, θ::Real;
     ws = dO.workers
     @sync for pid in ws
         @async Distributed.remotecall_fetch(_dps_rotate_local!, pid, dO.id, G, θ, ws, threaded)
+    end
+    @sync for pid in ws
+        @async Distributed.remotecall_fetch(_dps_merge_incoming!, pid, dO.id, ws)
+    end
+    @sync for pid in ws
+        @async Distributed.remotecall_fetch(_dps_clear_stage!, pid, dO.id)
+    end
+    return dO
+end
+
+"""
+    evolve_vec!(dO::DistributedPauliSum, G::PauliBasis, θ::Real; threaded=true)
+
+Same result as [`evolve!`](@ref) but uses the Vector-staging local rotation
+(`_dps_rotate_local_vec!`): each thread appends the sin terms to a per-owner
+`Vector` instead of a per-owner `Dict`, avoiding hash/probe/rehash in the hot
+loop. A separate entry point so the default `evolve!` path is untouched; the
+merge/take/clear phases are shared and container-agnostic.
+"""
+function evolve_vec!(dO::DistributedPauliSum{N,T}, G::PauliBasis{N}, θ::Real;
+                     threaded::Bool=true) where {N,T}
+    ws = dO.workers
+    @sync for pid in ws
+        @async Distributed.remotecall_fetch(_dps_rotate_local_vec!, pid, dO.id, G, θ, ws, threaded)
     end
     @sync for pid in ws
         @async Distributed.remotecall_fetch(_dps_merge_incoming!, pid, dO.id, ws)

@@ -292,6 +292,35 @@ Base.length(S::ShardedPauliSum) = sum(sh.n for sh in S.shards; init=0)
 Base.isempty(S::ShardedPauliSum) = length(S) == 0
 
 """
+    get(S::ShardedPauliSum{N}, p::PauliBasis{N}, default)
+    S[p::PauliBasis]
+
+Coefficient of a single basis term: shard lookup by `bin_index` plus a
+binary search of the sorted live keys, O(log). Only sees merged state
+(pending appends are not searched — every driver leaves merged state).
+`S[p]` returns `zero(T)` for absent terms, matching `PauliSum` access via
+`get(O, p, 0)`.
+"""
+function Base.get(S::ShardedPauliSum{N,W,T}, p::PauliBasis{N}, default) where {N,W,T}
+    sh = S.shards[bin_index(S.A, p) + 1]
+    z, x = _pack(W, p)
+    lo, hi = 1, sh.n
+    @inbounds while lo <= hi
+        mid = (lo + hi) >>> 1
+        if sh.z[mid] == z && sh.x[mid] == x
+            return sh.c[mid]
+        elseif _key_lt((sh.z[mid], sh.x[mid]), (z, x))
+            lo = mid + 1
+        else
+            hi = mid - 1
+        end
+    end
+    return default
+end
+Base.getindex(S::ShardedPauliSum{N,W,T}, p::PauliBasis{N}) where {N,W,T} =
+    get(S, p, zero(T))
+
+"""
     check_sharding(S::ShardedPauliSum)
 
 Verify the structural invariants: every live term sits in the shard given

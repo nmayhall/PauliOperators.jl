@@ -42,10 +42,20 @@ timing all three. `A` (or its row count `r`) controls the engine's rank
 map; by default a random map with ~16 shards per thread is drawn.
 
 Along the way each path records its live Pauli count (the peak is a table
-row) and the expectation value ⟨0…0|O(t)|0…0⟩; the traces are written to
-`<plotfile>.csv` and plotted to `plotfile` when Plots.jl is available
-(`plotfile=nothing` disables both). The cheap recordings are included in
-every path's timing.
+row) and two observable traces:
+
+- the infinite-temperature autocorrelation
+  `C(t) = tr(O(t)·O(0)) / tr(O(0)²)` — the standard operator-spreading /
+  transport observable (a coefficient lookup, since Paulis are
+  trace-orthogonal), and
+- `⟨ψ|O(t)|ψ⟩` for the computational-basis ket `state` (default `|0…0⟩`;
+  NOTE: the fully polarized state is an exact eigenstate of any
+  Heisenberg/XXZ model, so its trace is constant up to Trotter error —
+  pass e.g. a Néel ket for nontrivial dynamics).
+
+Traces are written to `<plotfile>.csv` and plotted to `plotfile` when
+Plots.jl is available (`plotfile=nothing` disables both). The cheap
+recordings are included in every path's timing.
 
 `record_every` sets the sampling stride in rotations (default: every
 window boundary). Mid-Trotter-step samples oscillate — only some of the
@@ -73,6 +83,7 @@ function compare_old_vs_new(O::PauliSum{N}, gens::Vector{PauliBasis{N}},
                             warmup::Bool=true,
                             plotfile::Union{Nothing,String}="old_vs_new_expectation.png",
                             record_every::Union{Nothing,Int}=nothing,
+                            state::Union{Nothing,Ket{N}}=nothing,
                             engine_kwargs...) where {N}
     if A === nothing
         r === nothing && (r = max(2, round(Int, log2(max(nthreads, 2))) + 4))
@@ -80,7 +91,9 @@ function compare_old_vs_new(O::PauliSum{N}, gens::Vector{PauliBasis{N}},
     end
     L = length(gens)
     nwarm = min(2window, L)
-    ψ0 = Ket(N, 0)
+    ψ0 = state === nothing ? Ket(N, 0) : state
+    refterms = collect(O)                      # O(0), for the autocorrelation
+    norm0sq = sum(abs2(c) for (_, c) in refterms)
     stride = record_every === nothing ? window : record_every
     # sample points: window boundaries (the engine is only observable on
     # merged state), thinned to the first boundary at/after each stride
@@ -98,13 +111,18 @@ function compare_old_vs_new(O::PauliSum{N}, gens::Vector{PauliBasis{N}},
     warmup && evolve(O, gens[1:nwarm], angs[1:nwarm]; truncation)
     peak_old = length(O)
     exp_old = Float64[]
+    corr_old = Float64[]
     Oref = deepcopy(O)
     old = @timed for i in 1:L
         evolve!(Oref, gens[i], angs[i])
         truncate!(Oref, truncation)
         n = length(Oref)
         n > peak_old && (peak_old = n)
-        i in recset && push!(exp_old, real(expectation_value(Oref, ψ0)))
+        if i in recset
+            push!(exp_old, real(expectation_value(Oref, ψ0)))
+            push!(corr_old, real(sum(conj(c0) * get(Oref, p, zero(c0))
+                                     for (p, c0) in refterms)) / norm0sq)
+        end
     end
 
     # ---- new engine, serial and threaded ----
@@ -123,15 +141,20 @@ function compare_old_vs_new(O::PauliSum{N}, gens::Vector{PauliBasis{N}},
         cnts = [WindowCounters(length(cc.window_subgroups)) for cc in ccircs]
         peak = length(S)
         exps = Float64[]
+        corrs = Float64[]
         st = @timed for (rng, cc, cnt) in zip(chunks, ccircs, cnts)
             evolve!(S, cc; truncation, local_truncation,
                     counters=cnt, rebalance_threshold)
             n = length(S)
             n > peak && (peak = n)
-            last(rng) in recset && push!(exps, real(expectation_value(S, ψ0)))
+            if last(rng) in recset
+                push!(exps, real(expectation_value(S, ψ0)))
+                push!(corrs, real(sum(conj(c0) * S[p] for (p, c0) in refterms)) / norm0sq)
+            end
         end
         push!(engines, (nthreads=nt, wall=st.time, gctime=st.gctime,
-                        bytes=st.bytes, nterms=length(S), peak=peak, exps=exps,
+                        bytes=st.bytes, nterms=length(S), peak=peak,
+                        exps=exps, corrs=corrs,
                         early_merges=sum(c -> sum(c.early_merges), cnts),
                         reldiff=norm(PauliSum(S) - Oref) / max(norm(Oref), eps())))
     end
@@ -163,7 +186,7 @@ function compare_old_vs_new(O::PauliSum{N}, gens::Vector{PauliBasis{N}},
         println("note: early merges fired; raise min_capacity/append_factor")
 
     res = (old=(wall=old.time, gctime=old.gctime, bytes=old.bytes,
-                peak=peak_old, exps=exp_old, result=Oref),
+                peak=peak_old, exps=exp_old, corrs=corr_old, result=Oref),
            engines=engines, boundaries=recpts)
     plotfile === nothing || save_expectation_plot(res; file=plotfile)
     return res
@@ -172,20 +195,22 @@ end
 """
     save_expectation_plot(res; file="old_vs_new_expectation.png")
 
-Write the ⟨0…0|O(t)|0…0⟩ traces from a `compare_old_vs_new` result to
-`<file>.csv`, and render them to `file` if Plots.jl is installed.
+Write the autocorrelation C(t) and ⟨ψ|O(t)|ψ⟩ traces from a
+`compare_old_vs_new` result to `<file>.csv`, and render a two-panel figure
+to `file` if Plots.jl is installed.
 """
 function save_expectation_plot(res; file::String="old_vs_new_expectation.png")
     csv = first(splitext(file)) * ".csv"
     open(csv, "w") do io
-        println(io, "rotation,old_dict," *
-                    join(("sharded_nt$(e.nthreads)" for e in res.engines), ","))
+        println(io, "rotation,old_corr,old_expval," *
+                    join(("sharded_nt$(e.nthreads)_corr,sharded_nt$(e.nthreads)_expval"
+                          for e in res.engines), ","))
         for (k, i) in enumerate(res.boundaries)
-            println(io, "$i,$(res.old.exps[k])," *
-                        join((e.exps[k] for e in res.engines), ","))
+            println(io, "$i,$(res.old.corrs[k]),$(res.old.exps[k])," *
+                        join(("$(e.corrs[k]),$(e.exps[k])" for e in res.engines), ","))
         end
     end
-    println("expectation traces written to $csv")
+    println("observable traces written to $csv")
     ok = try
         @eval import Plots
         true
@@ -195,15 +220,21 @@ function save_expectation_plot(res; file::String="old_vs_new_expectation.png")
     end
     ok || return csv
     Base.invokelatest() do
-        p = Plots.plot(xlabel="rotation", ylabel="⟨0…0| O(t) |0…0⟩",
-                       title="old vs new expectation trace", legend=:topright)
-        Plots.plot!(p, res.boundaries, res.old.exps, label="old dict", lw=3)
+        pc = Plots.plot(ylabel="tr(O(t)·O(0)) / tr(O(0)²)",
+                        title="infinite-temperature autocorrelation", legend=:topright)
+        Plots.plot!(pc, res.boundaries, res.old.corrs, label="old dict", lw=3)
+        pe = Plots.plot(xlabel="rotation", ylabel="⟨ψ| O(t) |ψ⟩",
+                        title="state expectation value", legend=:topright)
+        Plots.plot!(pe, res.boundaries, res.old.exps, label="old dict", lw=3)
         for e in res.engines
-            Plots.plot!(p, res.boundaries, e.exps,
+            Plots.plot!(pc, res.boundaries, e.corrs,
+                        label="sharded nt=$(e.nthreads)", ls=:dash, lw=1.5)
+            Plots.plot!(pe, res.boundaries, e.exps,
                         label="sharded nt=$(e.nthreads)", ls=:dash, lw=1.5)
         end
+        p = Plots.plot(pc, pe, layout=(2, 1), size=(700, 640))
         Plots.savefig(p, file)
-        println("expectation plot written to $file")
+        println("observable plot written to $file")
     end
     return file
 end
@@ -213,8 +244,8 @@ if abspath(PROGRAM_FILE) == @__FILE__
     Lx     = length(ARGS) >= 1 ? parse(Int, ARGS[1]) : 10
     Ly     = length(ARGS) >= 2 ? parse(Int, ARGS[2]) : 10 
     nsteps = length(ARGS) >= 3 ? parse(Int, ARGS[3]) : 100
-    window = length(ARGS) >= 4 ? parse(Int, ARGS[4]) : 8
-    alpha  = length(ARGS) >= 5 ? parse(Float64, ARGS[5]) : 0.2
+    window = length(ARGS) >= 4 ? parse(Int, ARGS[4]) : 10
+    alpha  = length(ARGS) >= 5 ? parse(Float64, ARGS[5]) : 0.1
     thresh = length(ARGS) >= 6 ? parse(Float64, ARGS[6]) : 1e-7
 
     N = Lx * Ly
@@ -229,19 +260,30 @@ if abspath(PROGRAM_FILE) == @__FILE__
         i, j = site(ix, iy), site(jx, jy)
         H[PauliBasis(Pauli(N, X=[i, j]))] = 1.0
         H[PauliBasis(Pauli(N, Y=[i, j]))] = 1.0
-        H[PauliBasis(Pauli(N, Z=[i, j]))] = 1.0
+        H[PauliBasis(Pauli(N, Z=[i, j]))] = 0.1
     end
     gens, angs = trotterize(H, 0.05, n_trotter=nsteps, order=1)
 
     O = PauliSum(N, Float64)
     O[PauliBasis(Pauli(N, Z=[site((Lx + 1) ÷ 2, (Ly + 1) ÷ 2)]))] = 1.0  # central Z probe
 
-    @printf("2D Heisenberg %dx%d (N=%d), %d rotations, window=%d, trunc=WeightDamped(%.3g, %.1e)\n\n",
-            Lx, Ly, N, length(gens), window, alpha, thresh)
+    # Néel (checkerboard) ket: NOT an eigenstate, so ⟨ψ|O(t)|ψ⟩ has real
+    # dynamics (the polarized |0…0⟩ is an XXZ eigenstate — constant trace)
+    ψ_neel = Ket(N, sum(Int128(1) << (site(ix, iy) - 1)
+                        for iy in 1:Ly for ix in 1:Lx if isodd(ix + iy);
+                        init=Int128(0)))
+
+    trunc = WeightDampedTruncation(alpha,thresh)
+    trunc = CoeffTruncation(thresh)
+    trunc = WeightTruncation(3)
+    @show trunc
+    @printf("2D Heisenberg %dx%d (N=%d), %d rotations, window=%d\n\n",
+            Lx, Ly, N, length(gens), window)
     compare_old_vs_new(O, gens, angs;
                        window,
                     #    truncation=CoeffTruncation(thresh),
-                       truncation=WeightDampedTruncation(alpha, thresh),
+                       truncation=trunc,
+                       state=ψ_neel,
                        record_every=length(gens) ÷ nsteps,   # sample only completed Trotter steps
                        min_capacity=1 << 14, append_factor=2.0)
 end

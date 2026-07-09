@@ -42,6 +42,16 @@ end
             @test norm(S, Inf) ≈ norm(O, Inf)
         end
 
+        # single-term lookup: getindex/get via shard + binary search
+        Sx = ShardedPauliSum(O, rand(RankMap{N}, 3); T=ComplexF64)
+        @test all(Sx[k] == O[k] for k in keys(O))
+        pmiss = PauliBasis(rand(Pauli{N}))
+        while haskey(O, pmiss)
+            pmiss = PauliBasis(rand(Pauli{N}))
+        end
+        @test Sx[pmiss] == 0.0 + 0.0im
+        @test get(Sx, pmiss, missing) === missing
+
         # identity term: lands in shard 0, tr preserved
         Oid = rand(PauliSum{N}, n_paulis=5)
         Oid[PauliBasis{N}(Int128(0), Int128(0))] = 2.5 + 0.0im

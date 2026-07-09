@@ -62,6 +62,144 @@ function merge_shards!(S::ShardedPauliSum{N,W,T}, f::MergeFilter;
 end
 
 
+# ------------------------------------------------------------
+# Observables and the truncation-strategy interface
+# ------------------------------------------------------------
+
+"""
+    expectation_value(S::ShardedPauliSum{N}, ψ::Ket{N})
+
+⟨ψ|S|ψ⟩ for a computational-basis ket. Includes any pending (unmerged)
+appends — expectation is linear, so the pre-merge state evaluates exactly.
+"""
+function expectation_value(S::ShardedPauliSum{N,W,T}, ψ::Ket{N}) where {N,W,T}
+    kv = ψ.v % W
+    acc = zero(T)
+    for tid in 1:S.nthreads
+        acc += _expectation_owned(S, tid, kv)
+    end
+    return acc
+end
+
+"""
+    inner_product(S1::ShardedPauliSum, S2::ShardedPauliSum)
+
+Liouville inner product tr(S1†·S2)/2^N over the shared basis terms
+(coefficient-vector dot product, matching `inner_product(::PauliSum, ...)`).
+Both engines must be sharded by the same `RankMap` and in merged state.
+"""
+function inner_product(S1::ShardedPauliSum{N,W,T}, S2::ShardedPauliSum{N,W,T}) where {N,W,T}
+    S1.A.rows == S2.A.rows ||
+        error("inner_product requires both engines sharded by the same RankMap")
+    out = zero(T)
+    for j in 1:nshards(S1)
+        a = S1.shards[j]
+        b = S2.shards[j]
+        i = 1
+        k = 1
+        @inbounds while i <= a.n && k <= b.n
+            ka = (a.z[i], a.x[i])
+            kb = (b.z[k], b.x[k])
+            if _key_eq(ka, kb)
+                out += conj(a.c[i]) * b.c[k]
+                i += 1
+                k += 1
+            elseif _key_lt(ka, kb)
+                i += 1
+            else
+                k += 1
+            end
+        end
+    end
+    return out
+end
+
+_measure(S::ShardedPauliSum, ::NoCorrection) = nothing
+_measure(S::ShardedPauliSum{N,W,T}, corr::EnergyCorrection{N}) where {N,W,T} =
+    (energy = real(expectation_value(S, corr.ψ)),)
+_measure(S::ShardedPauliSum{N,W,T}, corr::EnergyVarianceCorrection{N}) where {N,W,T} =
+    error("EnergyVarianceCorrection is not supported by the sharded engine " *
+          "(variance requires operator products across shards)")
+
+_adaptive_filter(thresh::Float64) =
+    MergeFilter(typemax(Int), typemax(Int), typemax(Int), thresh, 0.0, -1.0, 0.0, -1.0)
+
+function _compact_all!(S::ShardedPauliSum, f::MergeFilter)
+    for tid in 1:S.nthreads
+        _compact_owned!(S, tid, f)
+    end
+    return S
+end
+
+function _apply!(S::ShardedPauliSum, s::TruncationStrategy)
+    return _compact_all!(S, _compile_filter(s))
+end
+
+function _apply!(S::ShardedPauliSum, s::AdaptiveTruncation)
+    if length(S) > s.max_terms
+        hist = zeros(Int, _HIST_BINS)
+        for sh in S.shards
+            _hist_shard!(hist, sh)
+        end
+        th = max(_hist_threshold(hist, s.max_terms), s.min_thresh)
+        _compact_all!(S, _adaptive_filter(th))
+    else
+        _compact_all!(S, _adaptive_filter(s.min_thresh))
+    end
+    return S
+end
+
+"""
+    truncate!(S::ShardedPauliSum, strategy, corr=NoCorrection())
+
+Apply `strategy` to the merged engine state in place, with optional
+correction accumulation — the sharded analogue of
+`truncate!(::PauliSum, ...)`. Deterministic (weight/coefficient) strategies
+apply exactly; `AdaptiveTruncation` picks its global threshold from a
+64-bin |c| exponent histogram, so the kept count lands within a factor-of-2
+bin quantization of the serial top-k semantics. Stochastic strategies are
+not supported.
+"""
+function truncate!(S::ShardedPauliSum, strategy::TruncationStrategy,
+                   corr::CorrectionAccumulator=NoCorrection())
+    before = _measure(S, corr)
+    _apply!(S, strategy)
+    after = _measure(S, corr)
+    _accumulate!(corr, before, after)
+    return S
+end
+
+# Serial window/early boundary: measure → merge (strict filter) →
+# [adaptive threshold update + optional immediate re-clip] → measure →
+# accumulate. The re-clip sits inside the measurement span, so corrections
+# capture both merge-time and re-clip losses.
+function _boundary_serial!(S::ShardedPauliSum, fref::Base.RefValue{MergeFilter},
+                           adapt::Union{Nothing,AdaptiveTruncation},
+                           correction::CorrectionAccumulator,
+                           hist::Vector{Int},
+                           counters::Union{Nothing,WindowCounters}, w::Int;
+                           adaptive_update::Bool=true)
+    before = _measure(S, correction)
+    merge_shards!(S, fref[]; counters, w)
+    if adapt !== nothing && adaptive_update
+        total = length(S)
+        if total > adapt.max_terms
+            fill!(hist, 0)
+            for sh in S.shards
+                _hist_shard!(hist, sh)
+            end
+            th = max(_hist_threshold(hist, adapt.max_terms), adapt.min_thresh)
+            fref[] = _adaptive_filter(th)
+            total > 2 * adapt.max_terms && _compact_all!(S, fref[])
+        else
+            fref[] = _adaptive_filter(adapt.min_thresh)
+        end
+    end
+    after = _measure(S, correction)
+    _accumulate!(correction, before, after)
+    return S
+end
+
 """
     evolve!(S::ShardedPauliSum, circ::CompiledCircuit;
             truncation, local_truncation, correction, counters)
@@ -95,14 +233,18 @@ function evolve!(S::ShardedPauliSum{N,W,T}, circ::CompiledCircuit{N};
     circ.version == S.version ||
         error("CompiledCircuit was compiled against RankMap version $(circ.version), " *
               "but the ShardedPauliSum is at version $(S.version). Recompile with `compile`.")
-    correction isa NoCorrection ||
-        error("correction accumulators for the sharded engine land in milestone 3")
-    fstrict = _compile_filter(truncation)
+    adapt = truncation isa AdaptiveTruncation ? truncation : nothing
+    fref = Ref(adapt === nothing ? _compile_filter(truncation)
+                                 : _adaptive_filter(adapt.min_thresh))
     flocal = _compile_filter(local_truncation)
     if S.nthreads > 1
-        return _evolve_threaded!(S, circ, fstrict, flocal, counters,
+        correction isa Union{NoCorrection,EnergyCorrection} ||
+            error("the threaded driver supports NoCorrection and EnergyCorrection " *
+                  "(use nthreads=1 for custom correction accumulators)")
+        return _evolve_threaded!(S, circ, fref, adapt, flocal, correction, counters,
                                  Float64(rebalance_threshold))
     end
+    hist = zeros(Int, _HIST_BINS)
 
     L = length(circ)
     gz = Vector{W}(undef, L)
@@ -123,7 +265,10 @@ function evolve!(S::ShardedPauliSum{N,W,T}, circ::CompiledCircuit{N};
         w = cld(i, circ.window)
         s_G = circ.shifts[i]
         if !_snapshot_and_precheck_owned!(S, 1, s_G)
-            merge_shards!(S, fstrict; counters, w)
+            # early merge: corrections still accumulate; the adaptive
+            # threshold is only refreshed at regular window boundaries
+            _boundary_serial!(S, fref, adapt, correction, hist, counters, w;
+                              adaptive_update=false)
             counters === nothing || (counters.early_merges[w] += 1)
             # appends are empty post-merge, so segments may be regrown here
             _grow_appends_owned!(S, 1, s_G)
@@ -140,7 +285,7 @@ function evolve!(S::ShardedPauliSum{N,W,T}, circ::CompiledCircuit{N};
         end
         if i % circ.window == 0 || i == L
             t1 = time_ns()
-            merge_shards!(S, fstrict; counters, w)
+            _boundary_serial!(S, fref, adapt, correction, hist, counters, w)
             if counters !== nothing
                 counters.t_merge[w] += (time_ns() - t1) / 1e9
                 gcnow = Base.gc_num()

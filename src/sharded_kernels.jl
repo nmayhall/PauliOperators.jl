@@ -342,3 +342,73 @@ function _merge_shard!(sh::Shard{W,T}, m::Int, f::MergeFilter) where {W,T}
     sh.n = out
     return n + m, out
 end
+
+# ------------------------------------------------------------
+# Boundary utilities: in-place compaction, coefficient histograms,
+# expectation values (all allocation-free, owner-local)
+# ------------------------------------------------------------
+
+# In-place filter of a shard's live buffer (order-preserving, so the sorted
+# invariant survives). Used for re-clips after an adaptive threshold raise
+# and for the cold-path _apply!.
+function _compact_shard!(sh::Shard{W,T}, f::MergeFilter) where {W,T}
+    out = 0
+    @inbounds for i in 1:sh.n
+        should_drop(f, sh.z[i], sh.x[i], abs(sh.c[i])) && continue
+        out += 1
+        if out != i
+            sh.z[out] = sh.z[i]
+            sh.x[out] = sh.x[i]
+            sh.c[out] = sh.c[i]
+        end
+    end
+    sh.n = out
+    return sh
+end
+
+# |c| exponent histogram over the live buffer: bin b holds coefficients
+# with 2^(b-61) <= |c| < 2^(b-60), i.e. exponent(|c|) clamped to [-60, 3].
+@inline _hist_bin(absc::Float64) = clamp(exponent(absc), -60, 3) + 61
+
+function _hist_shard!(hist::Vector{Int}, sh::Shard{W,T}) where {W,T}
+    @inbounds for i in 1:sh.n
+        a = abs(sh.c[i])
+        a == 0.0 && continue
+        hist[_hist_bin(a)] += 1
+    end
+    return sh.n
+end
+
+# Largest coefficient threshold (a bin edge) keeping at most max_terms
+# terms: everything in the returned threshold's bin and below is dropped.
+function _hist_threshold(hist::Vector{Int}, max_terms::Int)
+    kept = 0
+    @inbounds for b in _HIST_BINS:-1:1
+        kept += hist[b]
+        if kept > max_terms
+            # drop bin b entirely: threshold just below the bin's upper edge
+            return prevfloat(2.0^(b - 60))
+        end
+    end
+    return -1.0   # everything fits
+end
+
+# ⟨ψ|·|ψ⟩ over the shard's live buffer AND pending appends (the pre-merge
+# state is live + appends with duplicates unmerged; expectation is linear,
+# so summing them is exact). Computational-basis kets only: a term
+# contributes c · (-1)^popcount(z & ψ) iff x == 0.
+function _expectation_shard(sh::Shard{W,T}, cur::Vector{Vector{Int}}, j::Int,
+                            nsegs::Int, kv::W) where {W,T}
+    acc = zero(T)
+    @inbounds for i in 1:sh.n
+        sh.x[i] == zero(W) || continue
+        acc += (1 - 2 * (count_ones(sh.z[i] & kv) & 1)) * sh.c[i]
+    end
+    @inbounds for t in 1:nsegs
+        for i in sh.seg_lo[t]:(cur[t][j] - 1)
+            sh.ax[i] == zero(W) || continue
+            acc += (1 - 2 * (count_ones(sh.az[i] & kv) & 1)) * sh.ac[i]
+        end
+    end
+    return acc
+end

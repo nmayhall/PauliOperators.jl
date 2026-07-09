@@ -63,10 +63,12 @@ mutable struct ThreadState
     cross_appends::Int
     merge_in::Int
     merge_out::Int
+    live_count::Int      # owned live terms (adaptive-threshold reduction)
+    acc::Float64         # expectation accumulator (correction reduction)
     ok::Bool
     _pad::NTuple{8,UInt64}
 end
-ThreadState() = ThreadState(0, 0, 0, 0, true, ntuple(_ -> UInt64(0), 8))
+ThreadState() = ThreadState(0, 0, 0, 0, 0, 0.0, true, ntuple(_ -> UInt64(0), 8))
 
 # ------------------------------------------------------------
 # Owner-local building blocks (used by both serial and threaded drivers)
@@ -130,6 +132,36 @@ function _snapshot_and_precheck_owned!(S::ShardedPauliSum, tid::Int, s_G::Int)
     return ok
 end
 
+# ⟨ψ|·|ψ⟩ over owned shards, INCLUDING pending appends (exact pre-merge
+# expectation by linearity). Safe only in quiescent phases (cursors stable).
+function _expectation_owned(S::ShardedPauliSum{N,W,T}, tid::Int, kv::W) where {N,W,T}
+    acc = zero(T)
+    @inbounds for j in 1:nshards(S)
+        S.owner[j] == tid || continue
+        acc += _expectation_shard(S.shards[j], S.cur, j, S.nthreads, kv)
+    end
+    return acc
+end
+
+# Coefficient histogram + live term count over owned shards (post-merge).
+function _hist_owned!(S::ShardedPauliSum, tid::Int, hist::Vector{Int})
+    fill!(hist, 0)
+    cnt = 0
+    @inbounds for j in 1:nshards(S)
+        S.owner[j] == tid || continue
+        cnt += _hist_shard!(hist, S.shards[j])
+    end
+    return cnt
+end
+
+function _compact_owned!(S::ShardedPauliSum, tid::Int, f::MergeFilter)
+    @inbounds for j in 1:nshards(S)
+        S.owner[j] == tid || continue
+        _compact_shard!(S.shards[j], f)
+    end
+    return S
+end
+
 # Post-merge append growth: each thread grows the append segments of the
 # shards it OWNS whose (unique) source shard for this shift cannot fit.
 # Only valid right after a merge (appends empty); cursor rows are reset by
@@ -172,11 +204,24 @@ end
 # Threaded windowed driver
 # ------------------------------------------------------------
 
+@inline function _sum_acc(tls::Vector{ThreadState}, nt::Int)
+    s = 0.0
+    for u in 1:nt
+        s += tls[u].acc
+    end
+    return s
+end
+
 function _worker!(S::ShardedPauliSum{N,W,T}, tid::Int, bar::SpinBarrier,
                   tls::Vector{ThreadState}, shifts::Vector{Int},
                   gz::Vector{W}, gx::Vector{W}, ng::Vector{Int},
                   cosv::Vector{Float64}, sinv::Vector{Float64},
-                  window::Int, fstrict::MergeFilter, flocal::MergeFilter,
+                  window::Int, fref::Base.RefValue{MergeFilter},
+                  adapt::Union{Nothing,AdaptiveTruncation},
+                  flocal::MergeFilter,
+                  correction::CorrectionAccumulator, kv::W,
+                  reclip::Base.RefValue{Bool},
+                  hists::Vector{Vector{Int}},
                   counters::Union{Nothing,WindowCounters},
                   rebalance_threshold::Float64,
                   pairs::Vector{Tuple{Int,Int}}, loads::Vector{Int}) where {N,W,T}
@@ -184,8 +229,10 @@ function _worker!(S::ShardedPauliSum{N,W,T}, tid::Int, bar::SpinBarrier,
     nt = S.nthreads
     L = length(shifts)
     ls = false
+    docorr = !(correction isa NoCorrection)
     gcbase = Base.gc_num()
     t0 = UInt64(0)
+    eb = 0.0
     try
         ls = _wait!(bar, ls)                       # all workers running
         tid == 1 && (gcbase = Base.gc_num())
@@ -200,12 +247,24 @@ function _worker!(S::ShardedPauliSum{N,W,T}, tid::Int, bar::SpinBarrier,
                 allok &= tls[u].ok
             end
             if !allok                              # capacity-forced early merge
-                tin, tout, _ = _merge_owned!(S, tid, fstrict)
+                if docorr
+                    st.acc = real(_expectation_owned(S, tid, kv))
+                    ls = _wait!(bar, ls)
+                    tid == 1 && (eb = _sum_acc(tls, nt))
+                end
+                tin, tout, _ = _merge_owned!(S, tid, fref[])
                 st.merge_in += tin
                 st.merge_out += tout
                 ls = _wait!(bar, ls)               # merges done
                 _reset_cursor_row!(S, tid)
                 ls = _wait!(bar, ls)               # cursors reset
+                if docorr
+                    st.acc = real(_expectation_owned(S, tid, kv))
+                    ls = _wait!(bar, ls)
+                    tid == 1 && _accumulate!(correction,
+                                             (energy = eb,),
+                                             (energy = _sum_acc(tls, nt),))
+                end
                 _grow_appends_owned!(S, tid, s_G)
                 if tid == 1 && counters !== nothing
                     counters.early_merges[w] += 1
@@ -233,11 +292,53 @@ function _worker!(S::ShardedPauliSum{N,W,T}, tid::Int, bar::SpinBarrier,
 
             if i % window == 0 || i == L
                 tid == 1 && (t0 = time_ns())
-                tin, tout, _ = _merge_owned!(S, tid, fstrict)
+                if docorr                          # pre-merge expectation
+                    st.acc = real(_expectation_owned(S, tid, kv))
+                    ls = _wait!(bar, ls)
+                    tid == 1 && (eb = _sum_acc(tls, nt))
+                end
+                tin, tout, _ = _merge_owned!(S, tid, fref[])
                 st.merge_in += tin
                 st.merge_out += tout
                 ls = _wait!(bar, ls)               # merges done
                 _reset_cursor_row!(S, tid)
+                if adapt !== nothing
+                    st.live_count = _hist_owned!(S, tid, hists[tid])
+                end
+                if adapt !== nothing || docorr
+                    ls = _wait!(bar, ls)           # cursors reset, hists ready
+                    if tid == 1 && adapt !== nothing
+                        total = 0
+                        for u in 1:nt
+                            total += tls[u].live_count
+                        end
+                        if total > adapt.max_terms
+                            h1 = hists[1]
+                            for u in 2:nt, b in 1:_HIST_BINS
+                                h1[b] += hists[u][b]
+                            end
+                            th = max(_hist_threshold(h1, adapt.max_terms),
+                                     adapt.min_thresh)
+                            fref[] = _adaptive_filter(th)
+                            reclip[] = total > 2 * adapt.max_terms
+                        else
+                            fref[] = _adaptive_filter(adapt.min_thresh)
+                            reclip[] = false
+                        end
+                    end
+                    if adapt !== nothing
+                        ls = _wait!(bar, ls)       # fref/reclip visible
+                        reclip[] && _compact_owned!(S, tid, fref[])
+                    end
+                    if docorr                      # post-merge (and post-re-clip)
+                        adapt !== nothing && (ls = _wait!(bar, ls))
+                        st.acc = real(_expectation_owned(S, tid, kv))
+                        ls = _wait!(bar, ls)
+                        tid == 1 && _accumulate!(correction,
+                                                 (energy = eb,),
+                                                 (energy = _sum_acc(tls, nt),))
+                    end
+                end
                 if tid == 1
                     if counters !== nothing
                         counters.t_merge[w] += (time_ns() - t0) / 1e9
@@ -287,7 +388,10 @@ function _worker!(S::ShardedPauliSum{N,W,T}, tid::Int, bar::SpinBarrier,
 end
 
 function _evolve_threaded!(S::ShardedPauliSum{N,W,T}, circ::CompiledCircuit{N},
-                           fstrict::MergeFilter, flocal::MergeFilter,
+                           fref::Base.RefValue{MergeFilter},
+                           adapt::Union{Nothing,AdaptiveTruncation},
+                           flocal::MergeFilter,
+                           correction::CorrectionAccumulator,
                            counters::Union{Nothing,WindowCounters},
                            rebalance_threshold::Float64) where {N,W,T}
     nt = S.nthreads
@@ -307,6 +411,9 @@ function _evolve_threaded!(S::ShardedPauliSum{N,W,T}, circ::CompiledCircuit{N},
         cosv[i] = cos(circ.angles[i])
         sinv[i] = sin(circ.angles[i])
     end
+    kv = correction isa EnergyCorrection{N} ? correction.ψ.v % W : zero(W)
+    reclip = Ref(false)
+    hists = [zeros(Int, _HIST_BINS) for _ in 1:nt]
     bar = SpinBarrier(nt)
     tls = [ThreadState() for _ in 1:nt]
     pairs = Vector{Tuple{Int,Int}}(undef, nshards(S))
@@ -315,13 +422,15 @@ function _evolve_threaded!(S::ShardedPauliSum{N,W,T}, circ::CompiledCircuit{N},
     for tid in 2:nt
         tasks[tid-1] = Threads.@spawn _worker!(S, $tid, bar, tls, circ.shifts,
                                                gz, gx, ng, cosv, sinv, circ.window,
-                                               fstrict, flocal, counters,
+                                               fref, adapt, flocal, correction, kv,
+                                               reclip, hists, counters,
                                                rebalance_threshold, pairs, loads)
     end
     err = nothing
     try
         _worker!(S, 1, bar, tls, circ.shifts, gz, gx, ng, cosv, sinv, circ.window,
-                 fstrict, flocal, counters, rebalance_threshold, pairs, loads)
+                 fref, adapt, flocal, correction, kv, reclip, hists, counters,
+                 rebalance_threshold, pairs, loads)
     catch e
         err = e                    # keep the primary failure, not the abort echoes
     end

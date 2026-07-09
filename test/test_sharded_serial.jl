@@ -222,9 +222,9 @@ end
         S() = ShardedPauliSum(O, A; T=ComplexF64)
         @test_throws ErrorException evolve!(S(), circ; truncation=StochasticCoeffTruncation(1e-3))
         @test_throws ErrorException evolve!(S(), circ; truncation=StochasticSamplingTruncation(10))
-        @test_throws ErrorException evolve!(S(), circ; truncation=AdaptiveTruncation())
+        # AdaptiveTruncation inside a composite cannot compile to one filter
         @test_throws ErrorException evolve!(S(), circ;
-            correction=EnergyCorrection(Ket(N, 0)))
+            truncation=CompositeTruncation(CoeffTruncation(1e-6), AdaptiveTruncation()))
         # version guard
         Sv = S()
         Sv.version += 1

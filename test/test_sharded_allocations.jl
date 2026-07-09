@@ -34,7 +34,7 @@ end
 
     reset_cursors!(S) = for t in 1:S.nthreads, j in 1:length(S.shards)
         S.cur[t][j] = S.shards[j].seg_lo[t]
-        S.mark[t][j] = S.shards[j].seg_lo[t]
+        S.shards[j].sweep_hi[t] = S.shards[j].seg_lo[t]
     end
 
     gz, gx = _pack(UInt64, gens[1])

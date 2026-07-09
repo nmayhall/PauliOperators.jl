@@ -10,12 +10,19 @@ Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 
+[weakdeps]
+ThreadPinning = "811555cd-349b-4f26-b7bc-1f208b848042"
+
+[extensions]
+PauliOperatorsThreadPinningExt = "ThreadPinning"
+
 [compat]
 BenchmarkTools = "1.6.0"
 LinearAlgebra = "1.11.0"
 Printf = "1.11.0"
 Random = "1.11.0"
 StaticArrays = "1.9.15"
+ThreadPinning = "1"
 julia = "1.11"
 
 [extras]

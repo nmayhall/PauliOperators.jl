@@ -43,26 +43,17 @@ segments here; the shared-memory engine merges in place.
 function merge_shards!(S::ShardedPauliSum{N,W,T}, f::MergeFilter;
                        counters::Union{Nothing,WindowCounters}=nothing,
                        w::Int=1) where {N,W,T}
-    skip_clean = (f == NOFILTER)
     maxpop = 0
-    @inbounds for j in 1:nshards(S)
-        sh = S.shards[j]
-        m = _gather_append!(sh, S.cur, j, S.nthreads)
-        if !(skip_clean && m == 0)
-            # chunked growth is permitted here (window boundary), never mid-rotation
-            sh.n + m > length(sh.z) && _grow_live!(sh, sh.n + m)
-            _sort_ws!(sh.ws, 1, m)
-            n_in, n_out = _merge_shard!(sh, m, f)
-            if counters !== nothing
-                counters.merge_in[w] += n_in
-                counters.merge_out[w] += n_out
-            end
+    for tid in 1:S.nthreads
+        tin, tout, mp = _merge_owned!(S, tid, f)
+        mp > maxpop && (maxpop = mp)
+        if counters !== nothing
+            counters.merge_in[w] += tin
+            counters.merge_out[w] += tout
         end
-        sh.n > maxpop && (maxpop = sh.n)
-        for t in 1:S.nthreads
-            S.cur[t][j] = sh.seg_lo[t]
-            S.mark[t][j] = sh.seg_lo[t]
-        end
+    end
+    for tid in 1:S.nthreads
+        _reset_cursor_row!(S, tid)
     end
     if counters !== nothing
         counters.max_shard_pop[w] = max(counters.max_shard_pop[w], maxpop)
@@ -70,34 +61,6 @@ function merge_shards!(S::ShardedPauliSum{N,W,T}, f::MergeFilter;
     return S
 end
 
-# One rotation over all shards (serial M1 driver), respecting the cursor/
-# mark protocol: sweeps see only entries below the rotation-start mark; all
-# appends land at or above it. Returns terms created.
-function _rotate_all_serial!(S::ShardedPauliSum{N,W,T}, s_G::Int,
-                             gz::W, gx::W, n_g::Int, cosθ::Float64, sinθ::Float64,
-                             flocal::MergeFilter) where {N,W,T}
-    created = 0
-    t = 1
-    @inbounds for k in 1:nshards(S)
-        cr, ov = _rotate_shard!(S, k, t, s_G, gz, gx, n_g, cosθ, sinθ, flocal)
-        created += cr
-        ov && error("append segment overflow in shard $k despite precheck — this is a bug")
-    end
-    # publish marks: appends from this rotation become sweepable next rotation
-    mk = S.mark[t]
-    ck = S.cur[t]
-    @inbounds for j in 1:nshards(S)
-        mk[j] = ck[j]
-    end
-    return created
-end
-
-function _precheck_all_serial(S::ShardedPauliSum, s_G::Int)
-    @inbounds for k in 1:nshards(S)
-        _precheck_shard(S, k, 1, s_G) || return false
-    end
-    return true
-end
 
 """
     evolve!(S::ShardedPauliSum, circ::CompiledCircuit;
@@ -112,23 +75,34 @@ unmerged duplicates, the documented cadence semantics); every
 under the strict `truncation`.
 
 If a rotation's worst-case appends cannot fit the destination segments, an
-early merge is triggered (harmless: it only changes truncation cadence);
-if capacity is still insufficient, that is a configuration error.
+early merge is triggered (harmless: it only changes truncation cadence),
+growing the append segments at the boundary if the population genuinely
+needs more room.
+
+With `nthreads > 1` (set at construction) the same windowed loop runs on a
+pool of long-lived workers synchronized by a spin barrier; results agree
+with the serial engine up to floating-point reduction order (bit-exact at
+`window = 1`). `rebalance_threshold` (default `Inf` = off) triggers a
+greedy reassignment of shard ownership at a window boundary whenever the
+most loaded thread exceeds that multiple of the mean load.
 """
 function evolve!(S::ShardedPauliSum{N,W,T}, circ::CompiledCircuit{N};
                  truncation::TruncationStrategy=NoTruncation(),
                  local_truncation::TruncationStrategy=NoTruncation(),
                  correction::CorrectionAccumulator=NoCorrection(),
-                 counters::Union{Nothing,WindowCounters}=nothing) where {N,W,T}
+                 counters::Union{Nothing,WindowCounters}=nothing,
+                 rebalance_threshold::Real=Inf) where {N,W,T}
     circ.version == S.version ||
         error("CompiledCircuit was compiled against RankMap version $(circ.version), " *
               "but the ShardedPauliSum is at version $(S.version). Recompile with `compile`.")
-    S.nthreads == 1 ||
-        error("the multithreaded driver lands in milestone 2; construct with nthreads=1")
     correction isa NoCorrection ||
         error("correction accumulators for the sharded engine land in milestone 3")
     fstrict = _compile_filter(truncation)
     flocal = _compile_filter(local_truncation)
+    if S.nthreads > 1
+        return _evolve_threaded!(S, circ, fstrict, flocal, counters,
+                                 Float64(rebalance_threshold))
+    end
 
     L = length(circ)
     gz = Vector{W}(undef, L)
@@ -148,23 +122,17 @@ function evolve!(S::ShardedPauliSum{N,W,T}, circ::CompiledCircuit{N};
     @inbounds for i in 1:L
         w = cld(i, circ.window)
         s_G = circ.shifts[i]
-        if !_precheck_all_serial(S, s_G)
+        if !_snapshot_and_precheck_owned!(S, 1, s_G)
             merge_shards!(S, fstrict; counters, w)
             counters === nothing || (counters.early_merges[w] += 1)
             # appends are empty post-merge, so segments may be regrown here
-            for k in 1:nshards(S)
-                if !_precheck_shard(S, k, 1, s_G)
-                    j = ((k - 1) ⊻ s_G) + 1
-                    _grow_append!(S.shards[j], S.nthreads, S.shards[k].n)
-                    for t in 1:S.nthreads
-                        S.cur[t][j] = S.shards[j].seg_lo[t]
-                        S.mark[t][j] = S.shards[j].seg_lo[t]
-                    end
-                end
-            end
+            _grow_appends_owned!(S, 1, s_G)
+            _reset_cursor_row!(S, 1)
+            _snapshot_and_precheck_owned!(S, 1, s_G)   # refresh sweep bounds
         end
         t0 = time_ns()
-        created = _rotate_all_serial!(S, s_G, gz[i], gx[i], ng[i], cosv[i], sinv[i], flocal)
+        created, ovf = _rotate_owned!(S, 1, s_G, gz[i], gx[i], ng[i], cosv[i], sinv[i], flocal)
+        ovf && error("append segment overflow despite precheck (rotation $i) — this is a bug")
         if counters !== nothing
             counters.t_rotate[w] += (time_ns() - t0) / 1e9
             counters.terms_created[w] += created

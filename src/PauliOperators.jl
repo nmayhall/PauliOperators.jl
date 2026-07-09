@@ -31,6 +31,7 @@ module PauliOperators
     include("type_ShardedPauliSum.jl")
     include("sharded_kernels.jl")
     include("sharded_evolve.jl")
+    include("sharded_threads.jl")
     include("decompose.jl")
     include("gates.jl")
     include("analysis.jl")
@@ -124,4 +125,5 @@ module PauliOperators
     export ShardedPauliSum
     export check_sharding, merge_shards!
     export WindowCounters
+    export pin_engine!
 end

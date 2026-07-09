@@ -160,10 +160,13 @@ end
     _rotate_shard!(S, k, t, s_G, gz, gx, n_g, cosθ, sinθ, f) -> (created, overflowed)
 
 Rotate shard `k` as thread `t`: sweep its live buffer and every append
-segment up to the frozen `mark`, appending sin branches into thread `t`'s
-segment of the partner shard `k ⊻ s_G` (destination resolved once — all of
-a shard's sin branches share one partner; that is the rank-map property).
-Appends land at `cur ≥ mark`, so swept and written ranges never overlap.
+segment up to the owner-snapshotted `sweep_hi`, appending sin branches into
+thread `t`'s segment of the partner shard `k ⊻ s_G` (destination resolved
+once — all of a shard's sin branches share one partner; that is the
+rank-map property). Appends land at `cur ≥ sweep_hi`, so swept and written
+ranges never overlap, and `sweep_hi` never moves mid-rotation (it is
+snapshotted in the barrier-protected precheck phase, unlike the live
+cursors of other threads).
 """
 function _rotate_shard!(S::ShardedPauliSum{N,W,T}, k::Int, t::Int, s_G::Int,
                         gz::W, gx::W, n_g::Int, cosθ::Float64, sinθ::Float64,
@@ -184,7 +187,7 @@ function _rotate_shard!(S::ShardedPauliSum{N,W,T}, k::Int, t::Int, s_G::Int,
     overflowed |= ov
     @inbounds for seg in 1:S.nthreads
         lo = src.seg_lo[seg]
-        hi = S.mark[seg][k] - 1
+        hi = src.sweep_hi[seg] - 1
         cur, cr, ov = _rotate_range!(src.az, src.ax, src.ac, lo, hi,
                                      gz, gx, n_g, cosθ, sinθ,
                                      dst.az, dst.ax, dst.ac, cur, seg_end, f)
@@ -195,13 +198,19 @@ function _rotate_shard!(S::ShardedPauliSum{N,W,T}, k::Int, t::Int, s_G::Int,
     return created, overflowed
 end
 
-# Worst-case capacity precheck for rotating shard k as thread t under shift
-# s_G: every swept term could anticommute and append to the partner segment.
-function _precheck_shard(S::ShardedPauliSum, k::Int, t::Int, s_G::Int)
+"""
+Snapshot shard `k`'s sweep bounds from the (currently stable) append
+cursors, then check worst-case capacity: every swept term could anticommute
+and append to the partner segment. MUST be called only by `k`'s owner,
+in a phase where no thread is rotating (cursors quiescent).
+"""
+function _snapshot_and_precheck!(S::ShardedPauliSum, k::Int, t::Int, s_G::Int)
     src = S.shards[k]
     swept = src.n
     @inbounds for seg in 1:S.nthreads
-        swept += S.mark[seg][k] - src.seg_lo[seg]
+        hi = S.cur[seg][k]
+        src.sweep_hi[seg] = hi
+        swept += hi - src.seg_lo[seg]
     end
     swept == 0 && return true
     j = ((k - 1) ⊻ s_G) + 1
@@ -232,11 +241,12 @@ end
 
 """
 In-place quicksort (median-of-3, insertion sort below 24, recurse-smaller /
-iterate-larger) of workspace triples by (z, x) key. Hand-rolled because
-Base's default QuickSort allocates scratch; this is the swap point for a
-future radix sort. Allocation-free.
+iterate-larger) of tuples by their first two fields — the (z, x) key for
+merge-workspace triples, or (population, shard) pairs for rebalancing.
+Hand-rolled because Base's default QuickSort allocates scratch; this is the
+swap point for a future radix sort. Allocation-free.
 """
-function _sort_ws!(ws::Vector{Tuple{W,W,T}}, lo::Int, hi::Int) where {W,T}
+function _sort_ws!(ws::Vector{TT}, lo::Int, hi::Int) where {TT<:Tuple}
     @inbounds while hi - lo >= 24
         mid = (lo + hi) >>> 1
         if _key_lt(ws[mid], ws[lo])

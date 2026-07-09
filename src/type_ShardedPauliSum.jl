@@ -60,6 +60,9 @@ mutable struct Shard{W<:Unsigned, T<:Number}
     ax::Vector{W}
     ac::Vector{T}
     seg_lo::Vector{Int}          # length nsegments+1 (fence-post)
+    sweep_hi::Vector{Int}        # per-segment sweep bound, snapshotted by the
+                                 # OWNER from stable cursors in the precheck
+                                 # phase (mid-rotation appends land above it)
     sz::Vector{W}
     sx::Vector{W}
     sc::Vector{T}
@@ -75,8 +78,11 @@ function _alloc_shard(::Type{W}, ::Type{T}, live_cap::Int, seg_size::Int, nsegs:
     return Shard{W,T}(
         zeros(W, live_cap), zeros(W, live_cap), zeros(T, live_cap), 0,
         zeros(W, append_cap), zeros(W, append_cap), zeros(T, append_cap), seg_lo,
+        copy(seg_lo[1:nsegs]),
         zeros(W, live_cap), zeros(W, live_cap), zeros(T, live_cap),
-        Vector{Tuple{W,W,T}}(undef, append_cap), zeros(Int, _HIST_BINS))
+        # ws must hold all appends at a merge AND the live terms during the
+        # construction-time sort
+        Vector{Tuple{W,W,T}}(undef, max(append_cap, live_cap)), zeros(Int, _HIST_BINS))
 end
 
 """
@@ -130,10 +136,12 @@ Hermitian dynamics and halves coefficient bandwidth).
 
 Threading state: `owner[j]` maps shard `j` to its owning thread (the ONLY
 load-balancing mechanism — terms never move between shards except by
-rotation), and `cur[t][j]` / `mark[t][j]` are thread `t`'s append cursor and
-its frozen rotation-start snapshot for its segment of shard `j`. Each inner
-cursor vector is written only by thread `t` and allocated by it
-(first-touch), so cursor traffic never falsely shares cache lines.
+rotation), and `cur[t][j]` is thread `t`'s append cursor for its segment of
+shard `j`. Each cursor row is written only by thread `t` and allocated by
+it (first-touch), so cursor traffic never falsely shares cache lines.
+Sweep bounds are snapshotted from the cursors into each shard's `sweep_hi`
+by its owner during the barrier-protected precheck phase, so mid-rotation
+cursor movement on other threads can never change what a sweep visits.
 """
 mutable struct ShardedPauliSum{N, W<:Unsigned, T<:Number}
     A::RankMap{N}
@@ -142,7 +150,6 @@ mutable struct ShardedPauliSum{N, W<:Unsigned, T<:Number}
     shards::Vector{Shard{W,T}}
     owner::Vector{Int32}
     cur::Vector{Vector{Int}}     # cur[t][shard]: next free slot in segment t
-    mark::Vector{Vector{Int}}    # mark[t][shard]: cursor at rotation start
     nthreads::Int
     version::Int
     cfg::ShardedConfig
@@ -199,12 +206,35 @@ function ShardedPauliSum(O::PauliSum{N,T0}, A::RankMap{N};
 
     row_z = W[r.z % W for r in A.rows]
     row_x = W[r.x % W for r in A.rows]
-    shards = [_alloc_shard(W, T, live_cap, seg_size, nthreads) for _ in 1:nsh]
     owner = Int32[fld((j - 1) * nthreads, nsh) + 1 for j in 1:nsh]
-    cur  = [[shards[j].seg_lo[t] for j in 1:nsh] for t in 1:nthreads]
-    mark = [[shards[j].seg_lo[t] for j in 1:nsh] for t in 1:nthreads]
+    shards = Vector{Shard{W,T}}(undef, nsh)
+    cur = Vector{Vector{Int}}(undef, nthreads)
+    if nthreads > 1 && Threads.nthreads() > 1
+        # first-touch initialization: each shard's buffers (and each cursor
+        # row) are allocated AND first written inside the owning thread's
+        # task, so their pages land on the owner's socket
+        @sync for t in 1:nthreads
+            Threads.@spawn begin
+                for j in 1:nsh
+                    owner[j] == $t || continue
+                    shards[j] = _alloc_shard(W, T, live_cap, seg_size, nthreads)
+                end
+                cur[$t] = zeros(Int, nsh)
+            end
+        end
+    else
+        for j in 1:nsh
+            shards[j] = _alloc_shard(W, T, live_cap, seg_size, nthreads)
+        end
+        for t in 1:nthreads
+            cur[t] = zeros(Int, nsh)
+        end
+    end
+    for t in 1:nthreads, j in 1:nsh
+        cur[t][j] = shards[j].seg_lo[t]
+    end
 
-    S = ShardedPauliSum{N,W,T}(A, row_z, row_x, shards, owner, cur, mark,
+    S = ShardedPauliSum{N,W,T}(A, row_z, row_x, shards, owner, cur,
                                nthreads, 0, ShardedConfig(live_cap, seg_size, debug))
 
     tol = Float64(imag_tol)
@@ -217,15 +247,20 @@ function ShardedPauliSum(O::PauliSum{N,T0}, A::RankMap{N};
         sh.c[sh.n] = _engine_coeff(T, c, tol)
     end
     for sh in shards
-        for i in 1:sh.n
-            sh.ws[i] = (sh.z[i], sh.x[i], sh.c[i])
-        end
-        _sort_ws!(sh.ws, 1, sh.n)
-        for i in 1:sh.n
-            sh.z[i], sh.x[i], sh.c[i] = sh.ws[i]
-        end
+        _sort_live!(sh)
     end
     return S
+end
+
+function _sort_live!(sh::Shard{W,T}) where {W,T}
+    for i in 1:sh.n
+        sh.ws[i] = (sh.z[i], sh.x[i], sh.c[i])
+    end
+    _sort_ws!(sh.ws, 1, sh.n)
+    for i in 1:sh.n
+        sh.z[i], sh.x[i], sh.c[i] = sh.ws[i]
+    end
+    return sh
 end
 
 """

@@ -18,6 +18,7 @@ using Test
     include("test_geometric_rankmap.jl")
     include("test_sharded_serial.jl")
     include("test_sharded_allocations.jl")
+    include("test_sharded_threads.jl")
     include("test_analysis.jl")
     include("test_channels.jl")
     include("test_transformations.jl")

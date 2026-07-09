@@ -19,7 +19,7 @@ using Random
 Lx     = length(ARGS) >= 1 ? parse(Int, ARGS[1]) : 3
 Ly     = length(ARGS) >= 2 ? parse(Int, ARGS[2]) : 2
 nsteps = length(ARGS) >= 3 ? parse(Int, ARGS[3]) : 4
-window = length(ARGS) >= 4 ? parse(Int, ARGS[4]) : 8
+window = length(ARGS) >= 4 ? parse(Int, ARGS[4]) : 1
 alpha  = length(ARGS) >= 5 ? parse(Float64, ARGS[5]) : 0.3
 thresh = length(ARGS) >= 6 ? parse(Float64, ARGS[6]) : 1e-8
 

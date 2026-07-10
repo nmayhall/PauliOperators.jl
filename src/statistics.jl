@@ -3,7 +3,7 @@
 
 Compute the variance of observable `O` in state `ψ`: `<O²> - <O>²`.
 """
-function variance(O::PauliSum{N}, ψ::Ket{N}) where N
+function variance(O::AnyPauliSum{N}, ψ::Ket{N}) where N
     σ = KetSum(N, ComplexF64)
     for (p, ci) in O
         cj, ki = p * ψ
@@ -26,7 +26,7 @@ end
 
 Compute the covariance of observables `A` and `B` in state `ψ`: `<A†B> - <A†><B>`.
 """
-function covariance(A::PauliSum{N}, B::PauliSum{N}, ψ::Ket{N}) where N
+function covariance(A::AnyPauliSum{N}, B::AnyPauliSum{N}, ψ::Ket{N}) where N
     σA = KetSum(N, ComplexF64)
     for (p, ci) in A
         cj, ki = p' * ψ

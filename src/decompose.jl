@@ -19,7 +19,7 @@ Heisenberg picture convention used by `evolve`.
 - `n_trotter::Int=1`: number of Trotter steps (dt is divided by n_trotter)
 - `order::Int=1`: Trotter order (1 = first-order, 2 = second-order symmetric)
 """
-function trotterize(H::PauliSum{N,T}, dt::Real; n_trotter::Int=1, order::Int=1) where {N,T}
+function trotterize(H::AnyPauliSum{N,T}, dt::Real; n_trotter::Int=1, order::Int=1) where {N,T}
     order in (1, 2) || throw(ArgumentError("Only order=1 and order=2 Trotter decompositions are supported"))
 
     generators = PauliBasis{N}[]
@@ -71,7 +71,7 @@ Returns `(generators::Vector{PauliBasis{N}}, angles::Vector{Float64})`.
 - `n_samples::Int=1`: number of random samples (more = better approximation)
 - `rng::AbstractRNG`: random number generator
 """
-function qdrift(H::PauliSum{N,T}, dt::Real; n_samples::Int=1,
+function qdrift(H::AnyPauliSum{N,T}, dt::Real; n_samples::Int=1,
                 rng::AbstractRNG=Random.default_rng()) where {N,T}
     terms = collect(H)
     coeffs = [real(c) for (_, c) in terms]

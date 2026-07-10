@@ -3,7 +3,7 @@
 
 Apply a Hadamard gate on qubit `q` via Pauli rotations (Heisenberg picture).
 """
-function hadamard(p::PauliSum{N}, q::Int) where N
+function hadamard(p::AnyPauliSum{N}, q::Int) where N
     q <= N || throw(DimensionMismatch("qubit index $q exceeds N=$N"))
     Z = PauliBasis(Pauli(N, Z=[q]))
     X = PauliBasis(Pauli(N, X=[q]))
@@ -33,7 +33,7 @@ end
 
 Apply a CNOT gate (control `c`, target `t`) via Pauli rotations (Heisenberg picture).
 """
-function cnot(p::PauliSum{N}, c::Int, t::Int) where N
+function cnot(p::AnyPauliSum{N}, c::Int, t::Int) where N
     c <= N || throw(DimensionMismatch("control qubit $c exceeds N=$N"))
     t <= N || throw(DimensionMismatch("target qubit $t exceeds N=$N"))
     Zc = PauliBasis(Pauli(N, Z=[c]))
@@ -67,7 +67,7 @@ end
 
 Apply Pauli X gate on qubit `q` (Heisenberg picture).
 """
-function X_gate(p::PauliSum{N}, q) where N
+function X_gate(p::AnyPauliSum{N}, q) where N
     return evolve(p, PauliBasis(Pauli(N, X=[q])), π)
 end
 
@@ -85,7 +85,7 @@ end
 
 Apply Pauli Y gate on qubit `q` (Heisenberg picture).
 """
-function Y_gate(p::PauliSum{N}, q) where N
+function Y_gate(p::AnyPauliSum{N}, q) where N
     return evolve(p, PauliBasis(Pauli(N, Y=[q])), π)
 end
 
@@ -103,7 +103,7 @@ end
 
 Apply Pauli Z gate on qubit `q` (Heisenberg picture).
 """
-function Z_gate(p::PauliSum{N}, q) where N
+function Z_gate(p::AnyPauliSum{N}, q) where N
     return evolve(p, PauliBasis(Pauli(N, Z=[q])), π)
 end
 
@@ -121,7 +121,7 @@ end
 
 Apply S gate (π/2 Z-rotation) on qubit `q`.
 """
-function S_gate(p::Union{PauliSum{N}, KetSum{N}}, q) where N
+function S_gate(p::Union{AnyPauliSum{N}, KetSum{N}}, q) where N
     return evolve(p, PauliBasis(Pauli(N, Z=[q])), π/2)
 end
 
@@ -130,7 +130,7 @@ end
 
 Apply T gate (π/4 Z-rotation) on qubit `q`.
 """
-function T_gate(p::Union{PauliSum{N}, KetSum{N}}, q) where N
+function T_gate(p::Union{AnyPauliSum{N}, KetSum{N}}, q) where N
     return evolve(p, PauliBasis(Pauli(N, Z=[q])), π/4)
 end
 

@@ -4,7 +4,7 @@
 Return a vector of length N+1 where entry i contains the number of terms
 with Pauli weight i-1.
 """
-function get_weight_counts(O::PauliSum{N}) where N
+function get_weight_counts(O::AnyPauliSum{N}) where N
     counts = zeros(Int, N+1)
     for (p, _) in O
         counts[weight(p)+1] += 1
@@ -18,7 +18,7 @@ end
 Return a vector of length N+1 where entry i contains the sum of |c|²
 for terms with Pauli weight i-1.
 """
-function get_weight_probs(O::PauliSum{N}) where N
+function get_weight_probs(O::AnyPauliSum{N}) where N
     probs = zeros(N+1)
     for (p, c) in O
         probs[weight(p)+1] += abs2(c)
@@ -32,7 +32,7 @@ end
 Return a vector of length 2N+1 where entry i contains the number of terms
 with Majorana weight i-1.
 """
-function get_majorana_weight_counts(O::PauliSum{N}) where N
+function get_majorana_weight_counts(O::AnyPauliSum{N}) where N
     counts = zeros(Int, 2N+1)
     for (p, _) in O
         counts[majorana_weight(p)+1] += 1
@@ -46,7 +46,7 @@ end
 Return a vector of length 2N+1 where entry i contains the sum of |c|²
 for terms with Majorana weight i-1.
 """
-function get_majorana_weight_probs(O::PauliSum{N}) where N
+function get_majorana_weight_probs(O::AnyPauliSum{N}) where N
     probs = zeros(2N+1)
     for (p, c) in O
         probs[majorana_weight(p)+1] += abs2(c)
@@ -60,7 +60,7 @@ end
 Return the `k` terms with largest absolute coefficients, sorted by decreasing |c|.
 Returns a `Vector{Pair{PauliBasis{N}, T}}`. Efficient for k << length(O).
 """
-function find_top_k(O::PauliSum{N,T}, k::Int) where {N,T}
+function find_top_k(O::AnyPauliSum{N,T}, k::Int) where {N,T}
     k > 0 || throw(ArgumentError("k must be positive"))
     k = min(k, length(O))
 
@@ -135,7 +135,7 @@ Returns an `nS × nS` matrix where `M[i,j] = ⟨S[i]|O|S[j]⟩`.
 Uses X-bitstring grouping for efficiency: for each ket pair `(i,j)`, only Pauli terms
 whose X-bitstring matches `S[i].v ⊻ S[j].v` are visited, rather than all terms in `O`.
 """
-function Base.Matrix(O::PauliSum{N,T}, S::Vector{Ket{N}}) where {N,T}
+function Base.Matrix(O::AnyPauliSum{N,T}, S::Vector{Ket{N}}) where {N,T}
     nS = length(S)
 
     # Group Pauli terms by X-bitstring for efficient subspace matrix construction.

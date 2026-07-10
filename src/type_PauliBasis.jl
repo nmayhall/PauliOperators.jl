@@ -25,6 +25,14 @@ PauliBasis{N}(z::Integer, x::Integer) where {N} = PauliBasis{N}(Int128(z), Int12
 LinearAlgebra.ishermitian(p::PauliBasis) = true
 coeff(p::PauliBasis) = 1
 
+"""
+    symplectic_phase(p::Union{Pauli{N}, PauliBasis{N}})
+
+The power of `i` needed to recover the Hermitian Pauli string from the bare
+ZX bitstring form: `P = i^θs ⋅ (z|x)`, with `θs = (-n_Y) mod 4` where `n_Y`
+is the number of Y sites (`count_ones(z & x)`). Arises because each Y site
+is stored as `ZX = iY`.
+"""
 @inline symplectic_phase(p::PauliBasis) = (4-count_ones(p.z & p.x)%4)%4
 
 function PauliBasis(str::String)
@@ -135,4 +143,10 @@ function Base.iterate(::Type{PauliBasis{N}}, state = 1) where N
     return PauliBasis{N}(next[1]-1, next[2]-1), state+1 
 end
  
-@inline commute(p1::PauliBasis, p2::PauliBasis) = iseven(count_ones(p1.x & p2.z) - count_ones(p1.z & p2.x)) 
+"""
+    commute(p1::PauliBasis, p2::PauliBasis)
+
+Return `true` if the two Pauli strings commute, via the symplectic parity
+test `popcount(x₁ & z₂) ≡ popcount(z₁ & x₂) (mod 2)` — no product is formed.
+"""
+@inline commute(p1::PauliBasis, p2::PauliBasis) = iseven(count_ones(p1.x & p2.z) - count_ones(p1.z & p2.x))

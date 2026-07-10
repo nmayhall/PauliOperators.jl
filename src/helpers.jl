@@ -1,3 +1,9 @@
+"""
+    get_on_bits(x::Integer)
+
+Return the (1-based) positions of the set bits of `x`, in increasing order.
+Used to translate `z`/`x` bitstrings into site indices, e.g. for display.
+"""
 function get_on_bits(x::T) where T<:Integer
     N = count_ones(x)
     inds = Vector{Int}(undef, N)

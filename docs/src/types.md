@@ -8,6 +8,6 @@ CurrentModule = PauliOperators
 ```@autodocs
 Modules = [PauliOperators]
 Public = true 
-Order = [:type]
+Order = [:type, :constant]
 ```
 

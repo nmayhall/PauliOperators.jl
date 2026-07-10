@@ -4,7 +4,24 @@ using Random
 # Abstract Types
 # ============================================================
 
+"""
+    TruncationStrategy
+
+Abstract supertype for term-truncation strategies applied by `truncate!` and
+the `truncation`/`local_truncation` keywords of `evolve!`. Define a new
+strategy by subtyping and implementing `_apply!(O, s)`.
+"""
 abstract type TruncationStrategy end
+
+"""
+    CorrectionAccumulator
+
+Abstract supertype for truncation-error trackers passed to `truncate!` and
+`evolve!`: observables are measured before and after each truncation and the
+differences accumulate. See `EnergyCorrection`, `EnergyVarianceCorrection`,
+`NoCorrection`. Define a new accumulator by subtyping and implementing
+`_measure(O, corr)` and `_accumulate!(corr, before, after)`.
+"""
 abstract type CorrectionAccumulator end
 
 

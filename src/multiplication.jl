@@ -1,6 +1,11 @@
 Base.:*(p::Pauli, pb::PauliBasis) = p*Pauli(pb)
 Base.:*(pb::PauliBasis, p::Pauli) = Pauli(pb)*p
 
+"""
+    Base.:*(d1::Union{Dyad{N}, DyadBasis{N}}, d2::Union{Dyad{N}, DyadBasis{N}})
+
+Dyad product: `|i⟩⟨j| ⋅ |k⟩⟨l| = δ_jk |i⟩⟨l|`, with coefficients multiplied through.
+"""
 function Base.:*(d1::Union{Dyad{N}, DyadBasis{N}}, d2::Union{Dyad{N}, DyadBasis{N}}) where N
     return Dyad{N}(coeff(d1) * coeff(d2) * (d1.bra.v==d2.ket.v), d1.ket, d2.bra)
 end
@@ -8,6 +13,13 @@ end
 Base.:*(k::Ket{N}, b::Bra{N}) where N = DyadBasis{N}(k,b)
 Base.:*(k::Bra{N}, b::Ket{N}) where N = k.v == b.v ? 1 : 0 
 
+"""
+    Base.:*(b::Bra{N}, p::Union{Pauli{N}, PauliBasis{N}})
+
+Apply a Pauli to a bra from the right: `⟨b|P = c ⟨b'|` with `b' = b ⊻ x`.
+Returns a `(coefficient, Bra)` tuple — a Pauli connects each basis bra to
+exactly one basis bra, so no sum type is needed.
+"""
 function Base.:*(b::Bra{N}, p::Pauli{N}) where N
     new_bra = Bra{N}(b.v ⊻ p.x)
     sign = count_ones(p.z & b.v)%2
@@ -20,6 +32,13 @@ function Base.:*(b::Bra{N}, p::PauliBasis{N}) where N
     return PHASE_TBL[(symplectic_phase(p) + 2*sign)%4 + 1], new_bra
 end
 
+"""
+    Base.:*(p::Union{Pauli{N}, PauliBasis{N}}, k::Ket{N})
+
+Apply a Pauli to a computational-basis ket: `P|k⟩ = c |k'⟩` with `k' = k ⊻ x`.
+Returns a `(coefficient, Ket)` tuple — a Pauli maps each basis state to
+exactly one basis state, so no sum type is needed.
+"""
 function Base.:*(p::Pauli{N}, k::Ket{N}) where N
     new_ket = Ket{N}(p.x ⊻ k.v)
     sign = count_ones(p.z & new_ket.v)%2
@@ -53,6 +72,12 @@ end
 
 
 
+"""
+    Base.:*(O::PauliSum{N,T}, k::Ket{N})
+
+Apply a sum of Paulis to a basis state, returning a `KetSum` with one entry
+per distinct `x` bitstring in `O`.
+"""
 function Base.:*(O::PauliSum{N,T}, k::Ket{N}) where {N,T}
     out = KetSum(N)
     for (p,c) in O
@@ -153,6 +178,14 @@ function Base.:*(p::Adjoint{<:Any, PauliSum{N,T}}, d::Adjoint{<:Any, DyadSum{N,T
 end 
 
 
+"""
+    promote_to_sum(x)
+
+Wrap a single basis element (`Pauli`, `PauliBasis`, `Dyad`, `DyadBasis`, `Ket`)
+in its corresponding one-term sum type. Mixed products between single
+operators and sums promote the single operand first, so only sum × sum
+methods need bespoke implementations.
+"""
 promote_to_sum(d::Union{Dyad, DyadBasis}) = DyadSum(d)
 promote_to_sum(d::Union{Pauli, PauliBasis}) = PauliSum(d)
 promote_to_sum(d::Ket) = KetSum(d)

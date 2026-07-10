@@ -30,6 +30,8 @@ $$
 
 where the $z$ and $x$ strings are encoded as bitwise representations of `Int128` integers, supporting up to 128 qubits. The $Y$ operator (or rather $iY$) is represented by setting both $x_i$ and $z_i$ to 1.
 
+> The full encoding — phase conventions, bit ordering, and the bit-level product and commutator identities the kernels are built on — is documented in [Pauli Representation](https://nmayhall.github.io/PauliOperators.jl/dev/representation/) in the docs.
+
 ## Types
 
 ### Pauli Operators
@@ -55,6 +57,8 @@ where the $z$ and $x$ strings are encoded as bitwise representations of `Int128`
 ```julia
   PauliSum{N,T} = Dict{PauliBasis{N}, T}
 ```
+
+- **`SparsePauliVector{N,W,T}`**: The same mathematical object as `PauliSum`, stored as flat sorted arrays instead of a `Dict` — a much faster engine for evolution-heavy workloads. See [Fast Pauli propagation with SparsePauliVector](#fast-pauli-propagation-with-sparsepaulivector) below.
 
 ### Quantum States
 
@@ -189,6 +193,8 @@ truncate!(O, strat, corr)
 println(corr.accumulated_energy)
 ```
 
+> The exact semantics of each strategy, the weight measures they are built on, and how to define custom strategies are documented in [Truncation](https://nmayhall.github.io/PauliOperators.jl/dev/truncation/) in the docs.
+
 ## Evolution
 
 ### Single-generator evolution
@@ -253,6 +259,38 @@ gens, angs = cnot_to_paulis(N, control, target)
 ```
 
 All gate functions work for both PauliSum (Heisenberg) and KetSum (Schr&ouml;dinger).
+
+## Fast Pauli Propagation with SparsePauliVector
+
+`SparsePauliVector` is an alternative storage engine for sums of Paulis, designed for evolution-heavy workloads. It stores the terms as flat, sorted, preallocated parallel arrays instead of a `Dict`: rotations become linear array sweeps, deduplication becomes a sort-merge, and the steady-state hot path allocates zero bytes. It supports the full `PauliSum` API (arithmetic, `evolve!`, `truncate!`, expectation values, clips, analysis utilities), so the typical workflow is: build as a `PauliSum`, convert, evolve, measure.
+
+```julia
+# Build with the convenient Dict-based API, then convert to flat storage
+H = PauliSum(4, ComplexF64)
+H[PauliBasis("ZZII")] = 1.0
+H[PauliBasis("IZZI")] = 1.0
+H[PauliBasis("XXII")] = 0.5
+v = SparsePauliVector(H; T=Float64)   # real coefficients suffice for Hermitian operators
+
+# Same evolution API as PauliSum, plus windowed merging
+ψ = Ket([0, 0, 0, 0])
+gens, angs = trotterize(H, 0.1; n_trotter=100)
+evolve!(v, gens, angs;
+        window=10,                        # dedup + truncate every 10 rotations
+        truncation=CoeffTruncation(1e-8),
+        correction=EnergyCorrection(ψ))
+
+E = expectation_value(v, ψ)   # observables work directly on the flat form
+O = PauliSum(v)               # gather back into a Dict-based PauliSum anytime
+```
+
+Key points:
+
+- **Exact `PauliSum` parity**: at `window=1` (the default), `evolve!` reproduces the `Dict`-based `evolve!`/`truncate!` sequence exactly — same terms, same truncation decisions. `window > 1` amortizes deduplication and truncation over the window for speed.
+- **Bandwidth-lean types**: keys are packed into `UInt64` when `N ≤ 64` (chosen automatically), and `T=Float64` halves coefficient bandwidth for Hermitian operators.
+- **When to use which**: `PauliSum` for construction and one-off algebra (`O(1)` inserts); `SparsePauliVector` for long rotation sequences and allocation-free hot loops (`setindex!` is `O(n)`, so build in bulk and convert).
+
+> The storage layout, the windowed evolution algorithm, and performance guidance are documented in [Data Structures & Performance](https://nmayhall.github.io/PauliOperators.jl/dev/data_structures/) in the docs.
 
 ## Analysis Utilities
 
@@ -339,4 +377,4 @@ The package is designed for high performance with zero-allocation operations:
 - Expectation value calculations
 - State manipulations
 
-When `N` (number of qubits) is known at compile time, all core operations are performed without heap allocations, making this package suitable for performance-critical quantum simulations.
+When `N` (number of qubits) is known at compile time, all core operations are performed without heap allocations, making this package suitable for performance-critical quantum simulations. For evolution-heavy workloads, the [`SparsePauliVector` engine](#fast-pauli-propagation-with-sparsepaulivector) extends the zero-allocation guarantee to entire rotation/truncation sweeps.

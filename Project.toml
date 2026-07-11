@@ -1,7 +1,7 @@
 name = "PauliOperators"
 uuid = "be646426-f34c-4536-b1d4-a45a9633e6db"
 authors = ["Nick Mayhall"]
-version = "3.0.1"
+version = "3.1.0"
 
 [deps]
 BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"

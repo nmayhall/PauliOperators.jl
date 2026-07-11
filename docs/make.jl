@@ -1,12 +1,13 @@
 using PauliOperators
 using Documenter
+using Documenter.Remotes: GitHub
 
 DocMeta.setdocmeta!(PauliOperators, :DocTestSetup, :(using PauliOperators); recursive=true)
 
 makedocs(;
     modules=[PauliOperators],
     authors="Nick Mayhall",
-    repo="https://github.com/nmayhall/PauliOperators.jl/blob/{commit}{path}#{line}",
+    repo=GitHub("nmayhall", "PauliOperators.jl"),
     sitename="PauliOperators.jl",
     format=Documenter.HTML(;
         prettyurls=get(ENV, "CI", "false") == "true",

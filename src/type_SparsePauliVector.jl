@@ -79,6 +79,7 @@ mutable struct SparsePauliVector{N, W<:Unsigned, T<:Number}
     sx::Vector{W}
     sc::Vector{T}
     ws::Vector{Tuple{W,W,T}}
+    ws2::Vector{Tuple{W,W,T}}   # ping-pong buffer for _unshuffle_ws!; lazily grown
     hist::Vector{Int}
 end
 
@@ -98,6 +99,7 @@ function _alloc_spv(N::Int, ::Type{W}, ::Type{T}, live_cap::Int, append_cap::Int
         # ws must hold all appends at a merge AND the live terms during the
         # construction-time sort
         Vector{Tuple{W,W,T}}(undef, max(append_cap, live_cap)),
+        Vector{Tuple{W,W,T}}(undef, 0),
         zeros(Int, _HIST_BINS))
 end
 
@@ -248,7 +250,7 @@ function Base.copy(v::SparsePauliVector{N,W,T}) where {N,W,T}
     return SparsePauliVector{N,W,T}(
         copy(v.z), copy(v.x), copy(v.c), v.n,
         copy(v.az), copy(v.ax), copy(v.ac), v.an,
-        copy(v.sz), copy(v.sx), copy(v.sc), copy(v.ws), copy(v.hist))
+        copy(v.sz), copy(v.sx), copy(v.sc), copy(v.ws), copy(v.ws2), copy(v.hist))
 end
 
 """

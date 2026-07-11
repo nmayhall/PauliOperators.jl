@@ -174,6 +174,33 @@ function merge_pending!(v::SparsePauliVector, f::MergeFilter=NOFILTER)
     return v
 end
 
+"""
+    merge_pending!(v, f, gz, gx)
+
+`merge_pending!` for appends produced by a *single* rotation under the
+generator mask `(gz, gx)`: the gathered triples are then sorted with
+respect to `key ⊻ mask`, so `_unshuffle_ws!` restores natural order in
+`weight(G)` linear passes instead of a comparison sort.
+"""
+function merge_pending!(v::SparsePauliVector{N,W}, f::MergeFilter, gz::W, gx::W) where {N,W}
+    m = _gather_append!(v)
+    _unshuffle_ws!(v, m, gz, gx)
+    _merge_spv!(v, m, f)
+    return v
+end
+
+# Sort the m gathered workspace triples: with a single-rotation mask, use
+# the linear unshuffle cascade; otherwise the general comparison sort.
+function _sort_pending!(O::SparsePauliVector{N,W}, m::Int,
+                        mask::Union{Nothing,Tuple{W,W}}) where {N,W}
+    if mask === nothing
+        _sort_ws!(O.ws, 1, m)
+    else
+        _unshuffle_ws!(O, m, mask[1], mask[2])
+    end
+    return nothing
+end
+
 # Rotate the full pre-merge state (live + pending appends) under one
 # generator, appending sin branches. Returns created count. The caller
 # guarantees capacity (worst case: every swept term appends once).
@@ -204,7 +231,7 @@ function evolve!(O::SparsePauliVector{N,W,T}, G::PauliBasis{N}, θ::Real) where 
     O.n + 2 * O.an > length(O.az) && _grow_append!(O, O.n + 2 * O.an)
     _, ovf = _rotate_spv!(O, gz, gx, ng, cos(θ), sin(θ), NOFILTER)
     ovf && error("append overflow despite precheck — this is a bug")
-    merge_pending!(O, NOFILTER)
+    merge_pending!(O, NOFILTER, gz, gx)
     return O
 end
 
@@ -228,21 +255,22 @@ _needs_merged_measure(::CorrectionAccumulator) = true
 # Window/early boundary: measure → merge (strict filter) → generic _apply!
 # for non-compilable strategies → measure → accumulate. Corrections capture
 # exactly the truncation loss.
-function _boundary!(O::SparsePauliVector, f::MergeFilter, strategy::S,
+function _boundary!(O::SparsePauliVector{N,W}, f::MergeFilter, strategy::S,
                     compiled::Bool, correction::CorrectionAccumulator,
                     counters::Union{Nothing,WindowCounters},
-                    w::Int) where {S<:TruncationStrategy}
+                    w::Int,
+                    mask::Union{Nothing,Tuple{W,W}}=nothing) where {N,W,S<:TruncationStrategy}
     local before, n_in, n_out
     if _needs_merged_measure(correction)
         m = _gather_append!(O)
-        _sort_ws!(O.ws, 1, m)
+        _sort_pending!(O, m, mask)
         n_in, n_out = _merge_spv!(O, m, NOFILTER)
         before = _measure(O, correction)
         compiled ? _compact_spv!(O, f) : _apply!(O, strategy)
     else
         before = _measure(O, correction)
         m = _gather_append!(O)
-        _sort_ws!(O.ws, 1, m)
+        _sort_pending!(O, m, mask)
         n_in, n_out = _merge_spv!(O, m, f)
         compiled || _apply!(O, strategy)
     end
@@ -315,25 +343,38 @@ function evolve!(O::SparsePauliVector{N,W,T}, generators::Vector{PauliBasis{N}},
     end
 
     gcbase = Base.gc_num()
+    # Appends from exactly one rotation are XOR-shuffled sorted keys, which
+    # _boundary! can unshuffle in weight(G) linear passes instead of a full
+    # sort; track how many rotations contributed since the last merge.
+    since = 0
+    lz = zero(W)
+    lx = zero(W)
     @inbounds for i in 1:L
         w = cld(i, window)
         # Worst case: every live term AND every pending append anticommutes
         # and appends one sin branch.
         if 2 * O.an + O.n > length(O.az)
-            _boundary!(O, f, truncation, compiled, correction, counters, w)
+            _boundary!(O, f, truncation, compiled, correction, counters, w,
+                       since == 1 ? (lz, lx) : nothing)
+            since = 0
             counters === nothing || (counters.early_merges[w] += 1)
             O.n > length(O.az) && _grow_append!(O, O.n)
         end
         t0 = time_ns()
         created, ovf = _rotate_spv!(O, gz[i], gx[i], ng[i], cosv[i], sinv[i], flocal)
         ovf && error("append overflow despite precheck (rotation $i) — this is a bug")
+        lz = gz[i]
+        lx = gx[i]
+        since += 1
         if counters !== nothing
             counters.t_rotate[w] += (time_ns() - t0) / 1e9
             counters.terms_created[w] += created
         end
         if i % window == 0 || i == L
             t1 = time_ns()
-            _boundary!(O, f, truncation, compiled, correction, counters, w)
+            _boundary!(O, f, truncation, compiled, correction, counters, w,
+                       since == 1 ? (lz, lx) : nothing)
+            since = 0
             if counters !== nothing
                 counters.t_merge[w] += (time_ns() - t1) / 1e9
                 gcnow = Base.gc_num()

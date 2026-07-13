@@ -46,11 +46,16 @@ Phase definitions:
 
 Since we need to keep track of a phase for a Pauli, we might as well let it become a general scalar value for broader use. As such, `Pauli.s` is a arbitrary complex number.
 """
-struct Pauli{N} 
+struct Pauli{N,T<:Unsigned}
     s::ComplexF64
-    z::Int128
-    x::Int128
+    z::T
+    x::T
+
+    Pauli{N,T}(s, z::T, x::T) where {N,T<:Unsigned} = new{N,T}(ComplexF64(s), z, x)
 end
+
+Pauli{N,T}(s, z::Integer, x::Integer) where {N,T<:Unsigned} = Pauli{N,T}(s, T(z), T(x))
+Pauli{N}(s, z::Integer, x::Integer) where {N} = Pauli{N,uinttype(N)}(s, z, x)
 
 PauliTypes{N} = Union{Pauli{N}, PauliBasis{N}}
 
@@ -63,8 +68,8 @@ Return the coefficient from the product of the scalar times the inverse symplect
 @inline inv_symplectic_phase(p::Pauli) = (4-symplectic_phase(p)%4)
 @inline symplectic_phase(p::Pauli) = (4-count_ones(p.z & p.x)%4)%4
 
-function Pauli(p::PauliBasis{N}) where N
-    return Pauli{N}(1im^symplectic_phase(p), p.z, p.x)
+function Pauli(p::PauliBasis{N,T}) where {N,T}
+    return Pauli{N,T}(1im^symplectic_phase(p), p.z, p.x)
 end
 
 """
@@ -73,9 +78,11 @@ end
 Construct a `Pauli{N}` from integer bitstrings `z` and `x` with scalar `s=1`.
 """
 function Pauli(z::I, x::I, N) where I<:Integer
-    z < Int128(2)^N || throw(DimensionMismatch)
-    x < Int128(2)^N || throw(DimensionMismatch)
-    return Pauli{N}(1, z, x)
+    T = uinttype(N)
+    mask = _bitmask(T, N)
+    (T(z) & ~mask) == zero(T) || throw(DimensionMismatch)
+    (T(x) & ~mask) == zero(T) || throw(DimensionMismatch)
+    return Pauli{N,T}(1, T(z), T(x))
 end
 
 
@@ -93,28 +100,28 @@ function Pauli(str::String)
         i in ['I', 'Z', 'X', 'Y'] || error("Bad string: ", str)
     end
 
-    x = Int128(0)
-    z = Int128(0)
-    ny = 0 
     N = length(str)
-    idx = Int128(1)
-    two = Int128(2)
-    one = Int128(1)
+    T = uinttype(N)
+    x = zero(T)
+    z = zero(T)
+    ny = 0
+    two = T(2)
+    one_ = T(1)
 
-    for i in str
+    for (i0, i) in enumerate(str)
+        idx = T(i0)
         if i in ['X', 'Y']
-            x |= two^(idx-one)
+            x |= two^(idx-one_)
             if i == 'Y'
                 ny += 1
             end
         end
         if i in ['Z', 'Y']
-            z |= two^(idx-one)
+            z |= two^(idx-one_)
         end
-        idx += 1
     end
     θ = 4-ny%4
-    return Pauli{N}(1im^θ, z, x)
+    return Pauli{N,T}(1im^θ, z, x)
 end
 
 
@@ -184,9 +191,12 @@ end
 
 Generate a random `Pauli{N}` with random `z`, `x` bitstrings and a random complex scalar.
 """
-function Base.rand(T::Type{Pauli{N}}) where N
-    max_val = Int128(2)^N - Int128(1)
-    return Pauli{N}(randn(ComplexF64), rand(Int128) & max_val, rand(Int128) & max_val)
+function Base.rand(::Type{Pauli{N}}) where N
+    return rand(Pauli{N,uinttype(N)})
+end
+function Base.rand(::Type{Pauli{N,T}}) where {N,T<:Unsigned}
+    mask = _bitmask(T, N)
+    return Pauli{N,T}(randn(ComplexF64), rand(T) & mask, rand(T) & mask)
 end
 
 
@@ -272,8 +282,11 @@ end
 
 Tensor product of two Paulis, returning a `Pauli{N+M}`.
 """
-function otimes(p1::Pauli{N}, p2::Pauli{M}) where {N,M} 
-    Pauli{N+M}(p1.s * p2.s, p1.z | p2.z << N, p1.x | p2.x << N)
+function otimes(p1::Pauli{N}, p2::Pauli{M}) where {N,M}
+    T = uinttype(N+M)
+    z = T(p1.z) | (T(p2.z) << N)
+    x = T(p1.x) | (T(p2.x) << N)
+    Pauli{N+M,T}(p1.s * p2.s, z, x)
 end
 
 """

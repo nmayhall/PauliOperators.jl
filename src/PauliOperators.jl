@@ -4,6 +4,8 @@ module PauliOperators
     using LinearAlgebra
     using StaticArrays
     using Random
+    using BitIntegers
+    using Distributed
 
     include("helpers.jl")
     include("type_PauliBasis.jl")
@@ -14,6 +16,7 @@ module PauliOperators
     include("type_DyadBasis.jl")
     include("type_Dyad.jl")
     include("type_DyadSum.jl")
+    include("type_SparsePauliVector.jl")
     include("multiplication.jl")
     include("addition.jl")
     include("conversions.jl")
@@ -25,11 +28,15 @@ module PauliOperators
     include("clip.jl")
     include("truncation.jl")
     include("evolve.jl")
+    include("spv_kernels.jl")
+    include("spv_evolve.jl")
+    include("spv_ops.jl")
     include("decompose.jl")
     include("gates.jl")
     include("analysis.jl")
     include("channels.jl")
     include("transformations.jl")
+    include("distributed.jl")
 
     const ⊗ = otimes
     const ⊕ = osum
@@ -38,6 +45,7 @@ module PauliOperators
     export Pauli
     export PauliBasis
     export PauliSum
+    export SparsePauliVector
     export Ket
     export Bra
     export DyadBasis
@@ -50,7 +58,8 @@ module PauliOperators
     export otimes, osum
     export expectation_value
     export matrix_element
-    export inner_product
+    export inner_product, inner_product_threaded
+    export mult_threaded
 
     export symplectic_phase
     export coeff
@@ -64,6 +73,7 @@ module PauliOperators
 
     export variance, covariance
     export commutator, anticommutator
+    export commutator!, anticommutator!
     export offdiag
 
     # Truncation strategy system
@@ -102,4 +112,10 @@ module PauliOperators
 
     # Transformations
     export jordan_wigner, boson_to_paulis
+
+    # Multinode (across-node) evolution
+    export uinttype
+    export DistributedPauliSum, distribute, collect_paulisum, collect_sparsepaulivector, evolve_vec!
+    export pauli_storage
+    export ensure_pauli_workers!, sharded_summary, opnorm2, destroy!
 end

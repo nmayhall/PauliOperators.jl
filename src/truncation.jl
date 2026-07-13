@@ -265,13 +265,13 @@ EnergyVarianceCorrection(ψ::Ket{N}) where N = EnergyVarianceCorrection{N}(ψ, 0
 # measure — snapshot quantities before/after truncation
 # ============================================================
 
-_measure(::PauliSum, ::NoCorrection) = nothing
+_measure(::AnyPauliSum, ::NoCorrection) = nothing
 
-function _measure(O::PauliSum{N}, corr::EnergyCorrection{N}) where N
+function _measure(O::AnyPauliSum{N}, corr::EnergyCorrection{N}) where N
     return (energy = real(expectation_value(O, corr.ψ)),)
 end
 
-function _measure(O::PauliSum{N}, corr::EnergyVarianceCorrection{N}) where N
+function _measure(O::AnyPauliSum{N}, corr::EnergyVarianceCorrection{N}) where N
     return (energy = real(expectation_value(O, corr.ψ)),
             variance = real(variance(O, corr.ψ)))
 end
@@ -310,7 +310,7 @@ implementing `_apply!(O, s)`. New correction types are defined by subtyping
 `CorrectionAccumulator` and implementing `_measure(O, corr)` and
 `_accumulate!(corr, before, after)`.
 """
-function truncate!(O::PauliSum, strategy::TruncationStrategy,
+function truncate!(O::AnyPauliSum, strategy::TruncationStrategy,
                    corr::CorrectionAccumulator=NoCorrection())
     before = _measure(O, corr)
     _apply!(O, strategy)

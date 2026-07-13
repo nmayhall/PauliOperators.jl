@@ -1,40 +1,48 @@
 """
-An occupation number vector, up to 128 qubits
+An occupation-number vector on `N` qubits. The bitstring `v` is stored as unsigned
+integer type `T` (default `uinttype(N)`), so more than 128 qubits are supported.
 """
-struct Ket{N} 
-    v::Int128
+struct Ket{N,T<:Unsigned}
+    v::T
+    Ket{N,T}(v::T) where {N,T<:Unsigned} = new{N,T}(v)
 end
 
-struct Bra{N}
-    v::Int128
+struct Bra{N,T<:Unsigned}
+    v::T
+    Bra{N,T}(v::T) where {N,T<:Unsigned} = new{N,T}(v)
 end
+
+Ket{N,T}(v::Integer) where {N,T<:Unsigned} = Ket{N,T}(T(v))
+Ket{N}(v::Integer) where {N} = Ket{N,uinttype(N)}(v)
+Bra{N,T}(v::Integer) where {N,T<:Unsigned} = Bra{N,T}(T(v))
+Bra{N}(v::Integer) where {N} = Bra{N,uinttype(N)}(v)
 
 """
     Ket(vec::Vector{T}) where T<:Union{Bool, Integer}
 
 Create a `Ket` from a vector of 0s and 1s representing qubit occupations.
 """
-function Ket(vec::Vector{T}) where T<:Union{Bool, Integer}
-    two = Int128(2)
-    v = Int128(0)
-
-    for i in 1:length(vec)
+function Ket(vec::Vector{S}) where S<:Union{Bool, Integer}
+    N = length(vec)
+    T = uinttype(N)
+    v = zero(T)
+    for i in 1:N
         if vec[i] == 1
-            v |= two^(i-1)
+            v |= T(2)^(i-1)
         end
     end
-    return Ket{length(vec)}(v)
+    return Ket{N,T}(v)
 end
-function Bra(vec::Vector{T}) where T<:Union{Bool, Integer}
-    two = Int128(2)
-    v = Int128(0)
-
-    for i in 1:length(vec)
+function Bra(vec::Vector{S}) where S<:Union{Bool, Integer}
+    N = length(vec)
+    T = uinttype(N)
+    v = zero(T)
+    for i in 1:N
         if vec[i] == 1
-            v |= two^(i-1)
+            v |= T(2)^(i-1)
         end
     end
-    return Bra{length(vec)}(v)
+    return Bra{N,T}(v)
 end
 
 """
@@ -43,16 +51,12 @@ end
 Create an `N`-qubit `Ket` from the integer `v` (bits beyond `N` are masked off).
 """
 function Ket(N::Integer, v::Integer)
-    for i in N+1:128
-        v &= ~(Int128(2)^(i-1))    
-    end
-    return Ket{N}(Int128(v))
+    T = uinttype(N)
+    return Ket{N,T}(T(v) & _bitmask(T, N))
 end
 function Bra(N::Integer, v::Integer)
-    for i in N+1:128
-        v &= ~(Int128(2)^(i-1))    
-    end
-    return Bra{N}(Int128(v))
+    T = uinttype(N)
+    return Bra{N,T}(T(v) & _bitmask(T, N))
 end
 
 
@@ -64,12 +68,14 @@ function Base.size(d::Bra{N}) where N
     return (1, BigInt(2)^N)
 end
 
-Base.adjoint(d::Ket{N}) where N = Bra{N}(d.v)
-Base.adjoint(d::Bra{N}) where N = Ket{N}(d.v)
+Base.adjoint(d::Ket{N,T}) where {N,T} = Bra{N,T}(d.v)
+Base.adjoint(d::Bra{N,T}) where {N,T} = Ket{N,T}(d.v)
 
 
-Base.rand(T::Type{Ket{N}}) where N = T(rand(Int128) & (Int128(2)^N - Int128(1)))
-Base.rand(T::Type{Bra{N}}) where N = T(rand(Int128) & (Int128(2)^N - Int128(1)))
+Base.rand(::Type{Ket{N}}) where N = rand(Ket{N,uinttype(N)})
+Base.rand(::Type{Bra{N}}) where N = rand(Bra{N,uinttype(N)})
+Base.rand(::Type{Ket{N,T}}) where {N,T<:Unsigned} = Ket{N,T}(rand(T) & _bitmask(T,N))
+Base.rand(::Type{Bra{N,T}}) where {N,T<:Unsigned} = Bra{N,T}(rand(T) & _bitmask(T,N))
 
 
 @inline coeff(d::Ket) = 1 
@@ -87,14 +93,14 @@ function Base.show(io::IO, P::Union{Ket,Bra})
 end
 
 function Base.string(p::Ket{N}) where N
-    out = [0 for i in 1:128]
+    out = [0 for i in 1:N]
     for i in get_on_bits(p.v)
         out[i] = 1
     end
     return "|"*join(out[1:N])*">"
 end
 function Base.string(p::Bra{N}) where N
-    out = [0 for i in 1:128]
+    out = [0 for i in 1:N]
     for i in get_on_bits(p.v)
         out[i] = 1
     end
@@ -156,8 +162,10 @@ function Base.iterate(::Type{Ket{N}}, state = 1) where N
 end
 
 function otimes(k1::Ket{N}, k2::Ket{M}) where {N,M}
-    Ket{N+M}(k1.v | k2.v << N)
+    T = uinttype(N+M)
+    Ket{N+M,T}(T(k1.v) | (T(k2.v) << N))
 end
 function otimes(k1::Bra{N}, k2::Bra{M}) where {N,M}
-    Bra{N+M}(k1.v | k2.v << N)
+    T = uinttype(N+M)
+    Bra{N+M,T}(T(k1.v) | (T(k2.v) << N))
 end

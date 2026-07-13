@@ -3,6 +3,9 @@ using Test
 
 @testset "Paulis.jl" begin
     include("test_operator_methods.jl")
+    include("test_sparse_pauli_vector.jl")
+    include("test_spv_equivalence.jl")
+    include("test_spv_evolution.jl")
     include("test_Pauli.jl")
     include("test_Ket.jl")
     include("test_multiplication.jl")
@@ -15,4 +18,6 @@ using Test
     include("test_analysis.jl")
     include("test_channels.jl")
     include("test_transformations.jl")
+    include("test_wide.jl")
+    include("test_distributed.jl")
 end

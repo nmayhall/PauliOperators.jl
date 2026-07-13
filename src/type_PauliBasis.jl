@@ -1,26 +1,30 @@
 
 """
-    z::Int128
-    x::Int128
+    z::T
+    x::T
 
 A positive, Hermitian Pauli, used as a basis for more general `Pauli`'s (which can have a complex phase).
 These are primarily used to provide a basis for linear combinations of Paulis, e.g., `PauliSum`'s.
-    
-    PauliBasis{N}(z,x)  =  i^θs ⋅ z₁...|x₁... 
+
+    PauliBasis{N}(z,x)  =  i^θs ⋅ z₁...|x₁...
                             =  P₁⊗...⊗Pₙ
+
+The bitstrings `z`, `x` are stored as an unsigned integer of type `T`. `T` defaults to
+`uinttype(N)`, the smallest unsigned type able to hold `N` bits, which uses `BitIntegers`
+fixed-width integers for `N > 128` (so e.g. a 10x10x10 lattice is `PauliBasis{1000,UInt1024}`).
 
 Phase definitions:
 - `symplectic_phase`: `θs` - phase needed to cancel the phase arising from the ZX factorized form: `θs = θ-θg`
 """
-struct PauliBasis{N}
-    z::Int128
-    x::Int128
+struct PauliBasis{N,T<:Unsigned}
+    z::T
+    x::T
 
-    # Add an inner constructor that validates N is a value type
-    PauliBasis{N}(z::Int128, x::Int128) where {N} = new{N}(z, x)
+    PauliBasis{N,T}(z::T, x::T) where {N,T<:Unsigned} = new{N,T}(z, x)
 end
 
-PauliBasis{N}(z::Integer, x::Integer) where {N} = PauliBasis{N}(Int128(z), Int128(x))
+PauliBasis{N,T}(z::Integer, x::Integer) where {N,T<:Unsigned} = PauliBasis{N,T}(T(z), T(x))
+PauliBasis{N}(z::Integer, x::Integer) where {N} = PauliBasis{N,uinttype(N)}(z, x)
 
 LinearAlgebra.ishermitian(p::PauliBasis) = true
 coeff(p::PauliBasis) = 1
@@ -32,27 +36,23 @@ function PauliBasis(str::String)
         i in ['I', 'Z', 'X', 'Y'] || error("Bad string: ", str)
     end
 
-    x = Int128(0)
-    z = Int128(0)
-    ny = 0 
     N = length(str)
-    idx = Int128(1)
-    two = Int128(2)
-    one = Int128(1)
+    T = uinttype(N)
+    x = zero(T)
+    z = zero(T)
+    two = T(2)
+    one_ = T(1)
 
-    for i in str
+    for (i0, i) in enumerate(str)
+        idx = T(i0)
         if i in ['X', 'Y']
-            x |= two^(idx-one)
-            if i == 'Y'
-                ny += 1
-            end
+            x |= two^(idx-one_)
         end
         if i in ['Z', 'Y']
-            z |= two^(idx-one)
+            z |= two^(idx-one_)
         end
-        idx += 1
     end
-    return PauliBasis{N}(z, x)
+    return PauliBasis{N,T}(z, x)
 end
 
 
@@ -111,16 +111,28 @@ function Base.string(p::PauliBasis{N}) where N
     return join(out)
 end
 
-function Base.rand(T::Type{PauliBasis{N}}) where N
-    max_val = Int128(2)^N - Int128(1)
-    return PauliBasis{N}(rand(Int128) & max_val, rand(Int128) & max_val)
+function Base.rand(::Type{PauliBasis{N}}) where N
+    return rand(PauliBasis{N,uinttype(N)})
+end
+function Base.rand(::Type{PauliBasis{N,T}}) where {N,T<:Unsigned}
+    mask = _bitmask(T, N)
+    return PauliBasis{N,T}(rand(T) & mask, rand(T) & mask)
+end
+
+# Lowest-N-bits mask for an unsigned type T (handles N == bitwidth(T)).
+@inline function _bitmask(::Type{T}, N::Integer) where {T<:Unsigned}
+    N >= sizeof(T) * 8 && return ~zero(T)
+    return (one(T) << N) - one(T)
 end
 
 
 Base.show(io::IO, p::PauliBasis{N}) where N = print(io, string(p))
 
-function otimes(p1::PauliBasis{N}, p2::PauliBasis{M}) where {N,M} 
-    PauliBasis{N+M}(p1.z | p2.z << N, p1.x | p2.x << N)
+function otimes(p1::PauliBasis{N}, p2::PauliBasis{M}) where {N,M}
+    T = uinttype(N+M)
+    z = T(p1.z) | (T(p2.z) << N)
+    x = T(p1.x) | (T(p2.x) << N)
+    PauliBasis{N+M,T}(z, x)
 end
 
 Base.:*(p1::PauliBasis, p2::PauliBasis) = Pauli(p1) * Pauli(p2)
@@ -132,7 +144,7 @@ Base.adjoint(p::PauliBasis) = p
 function Base.iterate(::Type{PauliBasis{N}}, state = 1) where N
     state > 4^N && return
     next = CartesianIndices((2^N,2^N))[state]
-    return PauliBasis{N}(next[1]-1, next[2]-1), state+1 
+    return PauliBasis{N}(next[1]-1, next[2]-1), state+1
 end
- 
-@inline commute(p1::PauliBasis, p2::PauliBasis) = iseven(count_ones(p1.x & p2.z) - count_ones(p1.z & p2.x)) 
+
+@inline commute(p1::PauliBasis, p2::PauliBasis) = iseven(count_ones(p1.x & p2.z) - count_ones(p1.z & p2.x))

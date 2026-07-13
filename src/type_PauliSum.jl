@@ -120,10 +120,62 @@ function Base.:*(ps1::PauliSum{N, T}, ps2::PauliSum{N, T}) where {N, T}
     end 
     return out
 end
+
+# ---- Threaded PauliSum product --------------------------------------------
+
+# Pick the outer (chunked) factor and preserve the ps1*ps2 order.
+@inline function _mult_setup(ps1::PauliSum{N,T}, ps2::PauliSum{N,T}) where {N,T}
+    outer_first = length(ps1) >= length(ps2)
+    terms = collect(outer_first ? ps1 : ps2)
+    inner = outer_first ? ps2 : ps1
+    return outer_first, terms, inner
+end
+
+function _mult_chunk!(out::PauliSum{N,T}, terms, range, inner, outer_first::Bool) where {N,T}
+    @inbounds for idx in range
+        op_o = terms[idx].first; c_o = terms[idx].second
+        for (op_i, c_i) in inner
+            prod = outer_first ? Pauli(op_o)*Pauli(op_i) : Pauli(op_i)*Pauli(op_o)
+            pb = PauliBasis(prod)
+            out[pb] = get(out, pb, zero(T)) + coeff(prod) * c_o * c_i
+        end
+    end
+    return nothing
+end
+
+"""
+    mult_threaded(ps1::PauliSum{N,T}, ps2::PauliSum{N,T}) -> PauliSum
+
+Threaded `ps1*ps2` (order preserved -- Pauli multiplication is non-commutative):
+the larger factor's terms are chunked across threads, each thread accumulates its
+products into a private `PauliSum` (no shared writes), and the partials are
+merged. Same value as `ps1*ps2` up to floating-point summation order; falls back
+to the serial `*` below the threading threshold. Threads the single-Pauli x
+PauliSum products (e.g. `G*O*G`, `G*O-O*G`) that are otherwise single-threaded --
+~3.7x at 8 threads on a 200k-term product.
+"""
+function mult_threaded(ps1::PauliSum{N, T}, ps2::PauliSum{N, T}) where {N, T}
+    nt = reduction_nthreads(max(length(ps1), length(ps2)))
+    nt == 1 && return ps1 * ps2
+    outer_first, terms, inner = _mult_setup(ps1, ps2)
+
+    partials = [PauliSum(N, T) for _ in 1:nt]
+    ranges = chunk_ranges(length(terms), nt)
+    @sync for cc in 1:nt
+        Threads.@spawn _mult_chunk!(partials[cc], terms, ranges[cc], inner, outer_first)
+    end
+
+    out = PauliSum(N, T)
+    for pt in partials, (pb, c) in pt
+        out[pb] = get(out, pb, zero(T)) + c
+    end
+    return out
+end
+
 """
     Base.:*(ps1::Adjoint{<:Any, PauliSum{N, T}}, ps2::PauliSum{N, T}) where {N, T}
 
-Multiply two `PauliSum`s. 
+Multiply two `PauliSum`s.
 """
 function Base.:*(ps1::Adjoint{<:Any, PauliSum{N, T}}, ps2::PauliSum{N, T}) where {N, T}
     out = PauliSum(N, T)

@@ -234,7 +234,7 @@ version = "2.7.2"
 deps = ["BenchmarkTools", "LinearAlgebra", "Printf", "Random", "StaticArrays"]
 path = ".."
 uuid = "be646426-f34c-4536-b1d4-a45a9633e6db"
-version = "3.0.1"
+version = "3.1.0"
 
 [[deps.Pkg]]
 deps = ["Artifacts", "Dates", "Downloads", "FileWatching", "LibGit2", "Libdl", "Logging", "Markdown", "Printf", "Random", "SHA", "TOML", "Tar", "UUIDs", "p7zip_jll"]

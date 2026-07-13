@@ -13,7 +13,7 @@ makedocs(;
         prettyurls=get(ENV, "CI", "false") == "true",
         canonical="https://nmayhall.github.io/PauliOperators.jl",
         edit_link="main",
-        assets=String[],
+        assets=String["assets/favicon.ico"],
     ),
     pages=[
         "Home" => "index.md",

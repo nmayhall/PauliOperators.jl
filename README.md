@@ -1,4 +1,6 @@
-# PauliOperators
+<p align="center">
+  <img src="https://raw.githubusercontent.com/nmayhall/PauliOperators.jl/main/docs/src/assets/readme-banner.png" alt="PauliOperators.jl — efficient Pauli algebra for quantum computing" width="640">
+</p>
 
 <!-- [![Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://nmayhall.github.io/PauliOperators.jl/stable/) -->
 [![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://nmayhall.github.io/PauliOperators.jl/dev/)

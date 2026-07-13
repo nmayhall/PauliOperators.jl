@@ -7,11 +7,16 @@
 # Run locally, e.g.:  julia --project examples/distributed_evolution.jl
 # or across nodes by adding SSH/SLURM workers before `using PauliOperators`.
 #
-# Each worker owns the Pauli terms that hash to it and stores an ordinary local
-# PauliSum. Every Trotter rotation cos-scales local terms and routes the new
-# sin-branch terms (G*p) to their owner workers, then clips with a global
-# threshold. Nothing is gathered on the master, so the sparse Pauli sum can exceed
-# a single node's memory (target: a 10x10x10 = 1000-qubit Heisenberg lattice).
+# Each worker owns the Pauli terms that hash to it and stores either a local
+# PauliSum (Dict) or SparsePauliVector. Select at runtime with:
+#
+#     PAULI_STORAGE=spv julia --project examples/distributed_evolution.jl
+#     PAULI_STORAGE=dict julia --project examples/distributed_evolution.jl
+#
+# Every Trotter rotation cos-scales local terms and routes the new sin-branch
+# terms (G*p) to their owner workers, then clips with a global threshold. Nothing
+# is gathered on the master, so the sparse Pauli sum can exceed a single node's
+# memory (target: a 10x10x10 = 1000-qubit Heisenberg lattice).
 
 using Distributed
 if nprocs() == 1
@@ -49,13 +54,14 @@ N, gens = heisenberg_generators(Lx, Ly, Lz)
 dt = 0.05
 angles = fill(dt, length(gens))
 
-@info "system" N n_generators = length(gens) workers = workers()
+storage = pauli_storage()
+@info "system" N n_generators = length(gens) workers = workers() storage
 
 # Heisenberg-picture evolution of a local observable O(0) = Z_1 Z_2.
 O0 = PauliSum(N)
 O0[PauliBasis(Pauli(N; Z=[1, 2]))] = 1.0 + 0.0im
 
-dO = distribute(O0; workers=workers())
+dO = distribute(O0; workers=workers(), storage=storage)
 
 n_steps = 20
 thresh = 1e-6                                # SPD coefficient truncation

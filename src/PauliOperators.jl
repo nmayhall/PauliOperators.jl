@@ -16,6 +16,7 @@ module PauliOperators
     include("type_DyadBasis.jl")
     include("type_Dyad.jl")
     include("type_DyadSum.jl")
+    include("type_SparsePauliVector.jl")
     include("multiplication.jl")
     include("addition.jl")
     include("conversions.jl")
@@ -27,6 +28,9 @@ module PauliOperators
     include("clip.jl")
     include("truncation.jl")
     include("evolve.jl")
+    include("spv_kernels.jl")
+    include("spv_evolve.jl")
+    include("spv_ops.jl")
     include("decompose.jl")
     include("gates.jl")
     include("analysis.jl")
@@ -41,6 +45,7 @@ module PauliOperators
     export Pauli
     export PauliBasis
     export PauliSum
+    export SparsePauliVector
     export Ket
     export Bra
     export DyadBasis
@@ -68,6 +73,7 @@ module PauliOperators
 
     export variance, covariance
     export commutator, anticommutator
+    export commutator!, anticommutator!
     export offdiag
 
     # Truncation strategy system
@@ -109,6 +115,7 @@ module PauliOperators
 
     # Multinode (across-node) evolution
     export uinttype
-    export DistributedPauliSum, distribute, collect_paulisum, evolve_vec!
+    export DistributedPauliSum, distribute, collect_paulisum, collect_sparsepaulivector, evolve_vec!
+    export pauli_storage
     export ensure_pauli_workers!, sharded_summary, opnorm2, destroy!
 end

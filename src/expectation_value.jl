@@ -56,7 +56,7 @@ function expectation_value(p::PauliSum{N,T}, d::DyadSum{N,T}) where {N,T}
     return eval 
 end
 
-function expectation_value(O::PauliSum, v::KetSum)
+function expectation_value(O::AnyPauliSum, v::KetSum)
     ev = 0
     for (p,c) in O
         for (k1,c1) in v
@@ -102,6 +102,14 @@ function matrix_element(b::Bra{N}, p::PauliSum{N,T}, k::Ket{N}) where {N,T}
     return sum(partials)
 end
 
+function matrix_element(b::Bra{N}, p::SparsePauliVector{N,W,T}, k::Ket{N}) where {N,W,T}
+    eval = zero(T)
+    for (pi, ci) in p
+        eval += matrix_element(b, pi, k) * ci
+    end
+    return eval
+end
+
 function matrix_element(b::KetSum{N}, p::PauliBasis{N}, k::KetSum{N}) where {N}
     if length(k) < length(b)
         pk = p*k
@@ -112,7 +120,7 @@ function matrix_element(b::KetSum{N}, p::PauliBasis{N}, k::KetSum{N}) where {N}
     end
 end
 
-function matrix_element(b::KetSum{N}, p::PauliSum{N}, k::KetSum{N}) where {N}
+function matrix_element(b::KetSum{N}, p::AnyPauliSum{N}, k::KetSum{N}) where {N}
     σ = p*k
     return inner_product(b,σ)
 end

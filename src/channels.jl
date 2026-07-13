@@ -11,18 +11,19 @@ amplitude damping, Lindblad, …) will subtype this and dispatch on a uniform
 abstract type AbstractQuantumChannel end
 
 
-@inline _qubit_mask(N::Int, ::Nothing) = N == 0 ? Int128(0) : (Int128(1) << N) - Int128(1)
+@inline _qubit_mask(N::Int, ::Nothing) = _bitmask(uinttype(N), N)
 
 @inline function _qubit_mask(N::Int, q::Integer)
     1 ≤ q ≤ N || throw(ArgumentError("qubit index $q out of range 1:$N"))
-    return Int128(1) << (q - 1)
+    return one(uinttype(N)) << (q - 1)
 end
 
 function _qubit_mask(N::Int, qs)
-    m = Int128(0)
+    T = uinttype(N)
+    m = zero(T)
     for q in qs
         1 ≤ q ≤ N || throw(ArgumentError("qubit index $q out of range 1:$N"))
-        m |= Int128(1) << (q - 1)
+        m |= one(T) << (q - 1)
     end
     return m
 end
@@ -80,7 +81,7 @@ function pauli_channel!(O::PauliSum{N,T}, pX::Real, pY::Real, pZ::Real;
     return O
 end
 
-pauli_channel(O::PauliSum, pX::Real, pY::Real, pZ::Real; kwargs...) =
+pauli_channel(O::AnyPauliSum, pX::Real, pY::Real, pZ::Real; kwargs...) =
     pauli_channel!(deepcopy(O), pX, pY, pZ; kwargs...)
 
 
@@ -113,7 +114,7 @@ function depolarizing_channel!(O::PauliSum{N,T}, p::Real; qubits=nothing) where 
     return O
 end
 
-depolarizing_channel(O::PauliSum, p::Real; kwargs...) =
+depolarizing_channel(O::AnyPauliSum, p::Real; kwargs...) =
     depolarizing_channel!(deepcopy(O), p; kwargs...)
 
 
@@ -138,7 +139,7 @@ function dephasing_channel!(O::PauliSum{N,T}, p::Real; qubits=nothing) where {N,
     return O
 end
 
-dephasing_channel(O::PauliSum, p::Real; kwargs...) =
+dephasing_channel(O::AnyPauliSum, p::Real; kwargs...) =
     dephasing_channel!(deepcopy(O), p; kwargs...)
 
 const phase_flip_channel!  = dephasing_channel!
@@ -164,7 +165,7 @@ function bit_flip_channel!(O::PauliSum{N,T}, p::Real; qubits=nothing) where {N,T
     return O
 end
 
-bit_flip_channel(O::PauliSum, p::Real; kwargs...) =
+bit_flip_channel(O::AnyPauliSum, p::Real; kwargs...) =
     bit_flip_channel!(deepcopy(O), p; kwargs...)
 
 
@@ -187,8 +188,82 @@ function bit_phase_flip_channel!(O::PauliSum{N,T}, p::Real; qubits=nothing) wher
     return O
 end
 
-bit_phase_flip_channel(O::PauliSum, p::Real; kwargs...) =
+bit_phase_flip_channel(O::AnyPauliSum, p::Real; kwargs...) =
     bit_phase_flip_channel!(deepcopy(O), p; kwargs...)
+
+
+# ------------------------------------------------------------
+# SparsePauliVector fast paths: in-place coefficient scaling on packed
+# words (order-preserving, allocation-free). Same semantics as the
+# PauliSum methods above.
+# ------------------------------------------------------------
+
+@inline _spv_mask(::Type{W}, N::Int, qubits) where {W<:Unsigned} =
+    W(_qubit_mask(N, qubits))
+
+function pauli_channel!(O::SparsePauliVector{N,W,T}, pX::Real, pY::Real, pZ::Real;
+                        qubits=nothing) where {N,W,T}
+    _check_inplace_eltype(T)
+    (pX ≥ 0 && pY ≥ 0 && pZ ≥ 0) || throw(ArgumentError("probabilities must be non-negative (got pX=$pX, pY=$pY, pZ=$pZ)"))
+    pX + pY + pZ ≤ 1 + 4*eps(Float64) || throw(ArgumentError("pX+pY+pZ must be ≤ 1 (got $(pX+pY+pZ))"))
+    M = _spv_mask(W, N, qubits)
+    λX = 1 - 2*(pY + pZ)
+    λY = 1 - 2*(pX + pZ)
+    λZ = 1 - 2*(pX + pY)
+    @inbounds for i in 1:O.n
+        xM = O.x[i] & M
+        zM = O.z[i] & M
+        nX = count_ones(xM & ~O.z[i])
+        nY = count_ones(xM &  O.z[i])
+        nZ = count_ones(zM & ~O.x[i])
+        O.c[i] *= λX^nX * λY^nY * λZ^nZ
+    end
+    return O
+end
+
+function depolarizing_channel!(O::SparsePauliVector{N,W,T}, p::Real; qubits=nothing) where {N,W,T}
+    _check_inplace_eltype(T)
+    0 ≤ p ≤ 1 || throw(ArgumentError("depolarizing parameter p=$p must be in [0,1]"))
+    M = _spv_mask(W, N, qubits)
+    λ = 1 - 4p/3
+    @inbounds for i in 1:O.n
+        O.c[i] *= λ^count_ones((O.z[i] | O.x[i]) & M)
+    end
+    return O
+end
+
+function dephasing_channel!(O::SparsePauliVector{N,W,T}, p::Real; qubits=nothing) where {N,W,T}
+    _check_inplace_eltype(T)
+    0 ≤ p ≤ 1 || throw(ArgumentError("dephasing parameter p=$p must be in [0,1]"))
+    M = _spv_mask(W, N, qubits)
+    λ = 1 - 2p
+    @inbounds for i in 1:O.n
+        O.c[i] *= λ^count_ones(O.x[i] & M)
+    end
+    return O
+end
+
+function bit_flip_channel!(O::SparsePauliVector{N,W,T}, p::Real; qubits=nothing) where {N,W,T}
+    _check_inplace_eltype(T)
+    0 ≤ p ≤ 1 || throw(ArgumentError("bit_flip parameter p=$p must be in [0,1]"))
+    M = _spv_mask(W, N, qubits)
+    λ = 1 - 2p
+    @inbounds for i in 1:O.n
+        O.c[i] *= λ^count_ones(O.z[i] & M)
+    end
+    return O
+end
+
+function bit_phase_flip_channel!(O::SparsePauliVector{N,W,T}, p::Real; qubits=nothing) where {N,W,T}
+    _check_inplace_eltype(T)
+    0 ≤ p ≤ 1 || throw(ArgumentError("bit_phase_flip parameter p=$p must be in [0,1]"))
+    M = _spv_mask(W, N, qubits)
+    λ = 1 - 2p
+    @inbounds for i in 1:O.n
+        O.c[i] *= λ^count_ones((O.x[i] ⊻ O.z[i]) & M)
+    end
+    return O
+end
 
 
 """

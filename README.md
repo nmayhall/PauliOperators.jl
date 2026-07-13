@@ -1,5 +1,8 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/nmayhall/PauliOperators.jl/main/docs/src/assets/readme-banner.png" alt="PauliOperators.jl — efficient Pauli algebra for quantum computing" width="640">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="brand/logo-horizontal-dark.svg">
+    <img src="brand/logo-horizontal.svg" alt="PauliOperators.jl — efficient Pauli algebra for quantum computing" width="640">
+  </picture>
 </p>
 
 <!-- [![Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://nmayhall.github.io/PauliOperators.jl/stable/) -->

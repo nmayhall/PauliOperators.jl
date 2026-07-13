@@ -22,7 +22,7 @@ This directory holds the remaining vector sources:
 | File | Use |
 |------|-----|
 | `icon-dark.svg` / `icon-light.svg` / `icon-purple.svg` | Square app icon / avatar, on each background |
-| `logo-horizontal.svg` | Wordmark lockup |
+| `logo-horizontal.svg` / `logo-horizontal-dark.svg` | Wordmark lockup — used in the repo README via a `<picture>` element that switches on `prefers-color-scheme` |
 | `readme-banner.svg` | Vector source of the README banner |
 
 ## Palette

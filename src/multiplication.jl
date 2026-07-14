@@ -60,7 +60,7 @@ function Base.:*(d::Union{Dyad{N}, DyadBasis{N}}, p::Union{Pauli{N}, PauliBasis{
     return Dyad{N}(new_coeff * coeff(d) , d.ket, new_bra)
 end 
 
-function Base.:*(p::Union{Pauli{N}, PauliBasis{N}}, ks::KetSum{N,T}) where {N,T}
+function Base.:*(p::Union{Pauli{N}, PauliBasis{N}}, ks::KetSum{N,W,T}) where {N,W,T}
     out = KetSum(N, T=T)
     for (k,c) in ks
         c2,k2 = p*k
@@ -73,12 +73,12 @@ end
 
 
 """
-    Base.:*(O::PauliSum{N,T}, k::Ket{N})
+    Base.:*(O::PauliSum{N,W,T}, k::Ket{N})
 
 Apply a sum of Paulis to a basis state, returning a `KetSum` with one entry
 per distinct `x` bitstring in `O`.
 """
-function Base.:*(O::PauliSum{N,T}, k::Ket{N}) where {N,T}
+function Base.:*(O::PauliSum{N,W,T}, k::Ket{N}) where {N,W,T}
     out = KetSum(N)
     for (p,c) in O
         c2,k2 = p*k
@@ -88,7 +88,7 @@ function Base.:*(O::PauliSum{N,T}, k::Ket{N}) where {N,T}
     return out 
 end
 
-function Base.:*(d::DyadSum{N,T}, p::PauliSum{N,T}) where {N,T}
+function Base.:*(d::DyadSum{N,W,T}, p::PauliSum{N,W,T}) where {N,W,T}
     out = DyadSum(N,T)
     for (dyad, coeff_d) in d
         for (pauli, coeff_p) in p
@@ -99,7 +99,7 @@ function Base.:*(d::DyadSum{N,T}, p::PauliSum{N,T}) where {N,T}
     return out 
 end 
 
-function Base.:*(d::DyadSum{N,T}, p::Adjoint{<:Any, PauliSum{N,T}}) where {N,T}
+function Base.:*(d::DyadSum{N,W,T}, p::Adjoint{<:Any, PauliSum{N,W,T}}) where {N,W,T}
     out = DyadSum(N,T)
     for (dyad, coeff_d) in d
         for (pauli, coeff_p) in p.parent
@@ -109,7 +109,7 @@ function Base.:*(d::DyadSum{N,T}, p::Adjoint{<:Any, PauliSum{N,T}}) where {N,T}
     end
     return out 
 end 
-function Base.:*(d::Adjoint{<:Any, DyadSum{N,T}}, p::PauliSum{N,T}) where {N,T}
+function Base.:*(d::Adjoint{<:Any, DyadSum{N,W,T}}, p::PauliSum{N,W,T}) where {N,W,T}
     out = DyadSum(N,T)
     for (dyad, coeff_d) in d.parent
         for (pauli, coeff_p) in p
@@ -120,7 +120,7 @@ function Base.:*(d::Adjoint{<:Any, DyadSum{N,T}}, p::PauliSum{N,T}) where {N,T}
     return out 
 end 
 
-function Base.:*(d::Adjoint{<:Any, DyadSum{N,T}}, p::Adjoint{<:Any, PauliSum{N, T}}) where {N,T}
+function Base.:*(d::Adjoint{<:Any, DyadSum{N,W,T}}, p::Adjoint{<:Any, PauliSum{N, W, T}}) where {N,W,T}
     out = DyadSum(N,T)
     for (dyad, coeff_d) in d.parent
         for (pauli, coeff_p) in p.parent
@@ -133,7 +133,7 @@ end
 
 
 
-function Base.:*(p::PauliSum{N,T}, d::DyadSum{N,T}) where {N,T}
+function Base.:*(p::PauliSum{N,W,T}, d::DyadSum{N,W,T}) where {N,W,T}
     out = DyadSum(N,T)
     for (dyad, coeff_d) in d
         for (pauli, coeff_p) in p
@@ -144,7 +144,7 @@ function Base.:*(p::PauliSum{N,T}, d::DyadSum{N,T}) where {N,T}
     return out 
 end 
 
-function Base.:*(p::PauliSum{N,T}, d::Adjoint{<:Any, DyadSum{N,T}}) where {N,T}
+function Base.:*(p::PauliSum{N,W,T}, d::Adjoint{<:Any, DyadSum{N,W,T}}) where {N,W,T}
     out = DyadSum(N,T)
     for (dyad, coeff_d) in d.parent
         for (pauli, coeff_p) in p
@@ -155,7 +155,7 @@ function Base.:*(p::PauliSum{N,T}, d::Adjoint{<:Any, DyadSum{N,T}}) where {N,T}
     return out 
 end 
 
-function Base.:*(p::Adjoint{<:Any, PauliSum{N,T}}, d::DyadSum{N,T}) where {N,T}
+function Base.:*(p::Adjoint{<:Any, PauliSum{N,W,T}}, d::DyadSum{N,W,T}) where {N,W,T}
     out = DyadSum(N,T)
     for (dyad, coeff_d) in d
         for (pauli, coeff_p) in p.parent
@@ -166,7 +166,7 @@ function Base.:*(p::Adjoint{<:Any, PauliSum{N,T}}, d::DyadSum{N,T}) where {N,T}
     return out 
 end 
 
-function Base.:*(p::Adjoint{<:Any, PauliSum{N,T}}, d::Adjoint{<:Any, DyadSum{N,T}}) where {N,T}
+function Base.:*(p::Adjoint{<:Any, PauliSum{N,W,T}}, d::Adjoint{<:Any, DyadSum{N,W,T}}) where {N,W,T}
     out = DyadSum(N,T)
     for (dyad, coeff_d) in d.parent
         for (pauli, coeff_p) in p.parent
@@ -191,7 +191,7 @@ promote_to_sum(d::Union{Pauli, PauliBasis}) = PauliSum(d)
 promote_to_sum(d::Ket) = KetSum(d)
 
 Singles{N} = Union{Dyad{N}, DyadBasis{N}, Pauli{N}, PauliBasis{N}}
-Sums{N,T} = Union{DyadSum{N,T}, PauliSum{N,T}, Adjoint{<:Any, DyadSum{N,T}}, Adjoint{<:Any, PauliSum{N,T}}}
+Sums{N,T} = Union{DyadSum{N,W,T} where W, PauliSum{N,W,T} where W, Adjoint{<:Any, <:(DyadSum{N,W,T} where W)}, Adjoint{<:Any, <:(PauliSum{N,W,T} where W)}}
 
 Base.:*(s::Singles{N}, p::Sums{N,T}) where {N,T} = promote_to_sum(s) * p
 Base.:*(p::Sums{N,T}, s::Singles{N}) where {N,T} = p * promote_to_sum(s)

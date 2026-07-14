@@ -14,8 +14,9 @@ Returns a `PauliSum{N, ComplexF64}`.
 """
 function jordan_wigner(f::Integer, N::Integer)
     1 ≤ f ≤ N || throw(ArgumentError("f must satisfy 1 ≤ f ≤ N (got f=$f, N=$N)"))
-    z_pre = Int128(2)^(f-1) - Int128(1)   # Z on sites 1..f-1
-    x_f   = Int128(2)^(f-1)               # X (or Y) on site f
+    W = word_type(N)
+    z_pre = _nbit_mask(W, f-1)        # Z on sites 1..f-1
+    x_f   = one(W) << (f-1)           # X (or Y) on site f
     out = PauliSum(N, ComplexF64)
     out[PauliBasis{N}(z_pre,        x_f)] =  0.5 + 0.0im   # ½ X_f Z_{<f}
     out[PauliBasis{N}(z_pre | x_f,  x_f)] = -0.5im         # -½i Y_f Z_{<f}

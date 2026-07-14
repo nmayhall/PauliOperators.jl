@@ -12,9 +12,11 @@ explains both layouts, how the fast evolution path works, and how to choose.
 
 ## PauliSum: hash-map storage
 
-`PauliSum{N,T}` is literally a `Dict{PauliBasis{N}, T}`. Each term is a key–value pair;
-the [phase conventions](representation.md) make `PauliBasis` a canonical key, so equal
-Pauli strings always collide into one entry and addition is `mergewith(+)`.
+`PauliSum{N,W,T}` is literally a `Dict{PauliBasis{N,W}, T}`. Each term is a key–value
+pair; the [phase conventions](representation.md) make `PauliBasis` a canonical key, so
+equal Pauli strings always collide into one entry and addition is `mergewith(+)`. The
+key word `W` follows [`word_type`](@ref)`(N)`, so a 40-qubit sum hashes 16-byte keys
+while a 1000-qubit sum hashes 256-byte keys — both isbits, both allocation-free.
 
 This is the right default. It is ideal for *constructing and manipulating* operators:
 
@@ -27,7 +29,7 @@ rotation touches every term:
 
 - terms are scattered across the hash table's memory, so iteration is cache-unfriendly
   and order is unspecified;
-- every insert hashes a 32-byte key and may trigger a rehash (allocation);
+- every insert hashes a `2*sizeof(W)`-byte key and may trigger a rehash (allocation);
 - coefficients and keys live in the same slot array, so bandwidth is wasted when a
   kernel needs only keys or only coefficients.
 
@@ -45,8 +47,9 @@ workspace        ws                         sort/merge staging
 
 Two type parameters do bandwidth work:
 
-- `W` is the packed key word: `UInt64` when ``N \le 64`` (half the key bandwidth of
-  `Int128`), `UInt128` up to 128 qubits. Constructors choose it automatically.
+- `W` is the packed key word — the same size-matched `word_type(N)` used by every
+  type in the package (`UInt64` when ``N \le 64``, through `UInt1024` at 1024 qubits).
+  Constructors choose it automatically.
 - `T` is the coefficient type. For Hermitian operators, `T = Float64` is sufficient
   and halves coefficient bandwidth relative to `ComplexF64`. Converting a complex-typed
   `PauliSum` with `T=Float64` checks that all coefficients are numerically real.
@@ -80,7 +83,7 @@ relative to `length(H)`, so growth between truncations does not immediately forc
 reallocation.
 
 Methods that only iterate `(PauliBasis, coefficient)` pairs are defined once for the
-union `AnyPauliSum{N,T} = Union{PauliSum{N,T}, SparsePauliVector{N,W,T} where W}` —
+union `AnyPauliSum{N,W,T} = Union{PauliSum{N,W,T}, SparsePauliVector{N,W,T}}` —
 this is why analysis utilities, `truncate!`, and expectation values accept both types.
 
 ## The windowed evolution algorithm

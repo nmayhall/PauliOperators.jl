@@ -23,9 +23,11 @@ Every single-qubit Pauli can be written as a product of a Z part and an X part:
 Note the last row: ``ZX = iY``, not ``Y``. This factor of ``i`` per Y site is the origin
 of every phase convention in the package.
 
-An ``N``-qubit Pauli string is then encoded as **two integer bitstrings** ``z`` and ``x``
-(stored as `Int128`, supporting up to 128 qubits), where bit ``j`` of each describes
-site ``j``. We write the *bare bitstring operator* as
+An ``N``-qubit Pauli string is then encoded as **two integer bitstrings** ``z`` and ``x``,
+stored in an unsigned word `W` sized to the register by [`word_type`](@ref) (`UInt64`
+up to 64 qubits, `UInt128` up to 128, then `UInt256`/`UInt512`/`UInt1024` from
+BitIntegers.jl up to 1024 qubits), where bit ``j`` of each describes site ``j``. We
+write the *bare bitstring operator* as
 
 ```math
 (z|x) \;=\; \bigotimes_{j=1}^{N} Z^{z_j} X^{x_j}.
@@ -163,10 +165,32 @@ for observables follow directly:
 - **Matrix element** ``\langle b|P|k\rangle``: nonzero only when ``b = k \oplus x``,
   i.e. exactly one bra connects to a given ket through a given Pauli.
 
-## Limits and extensions
+## The storage word
 
-The `Int128` fields cap the register at ``N \le 128``. The `SparsePauliVector` engine
-already packs keys into the narrowest sufficient unsigned word (`UInt64` for
-``N \le 64``) and its kernels are written generically over `W<:Unsigned`, so support
-for wider registers (via `BitIntegers.jl`) is a planned extension point — see
-[Data Structures & Performance](data_structures.md).
+Every bitstring-carrying type is parameterized on its storage word:
+`PauliBasis{N,W}`, `Pauli{N,W}`, `Ket{N,W}`, `Bra{N,W}`, `Dyad{N,W}`,
+`DyadBasis{N,W}`, with sum aliases `PauliSum{N,W,T} = Dict{PauliBasis{N,W},T}` and
+likewise for `KetSum`/`DyadSum`. The canonical word for a register is
+[`word_type`](@ref)`(N)`; registers beyond 1024 qubits throw an `ArgumentError`.
+
+Three rules keep this free of overhead and surprises:
+
+- **`W` is inferred, never computed, on hot paths.** Constructors like
+  `PauliBasis{N}(z::W, x::W)` take `W` from their arguments by dispatch; `word_type`
+  is only consulted when building from scratch (string constructors, `rand`, empty
+  sums). All kernels (`⊻`, `&`, `count_ones`, shifts) are generic over `W<:Unsigned`
+  and compile to straight-line code at every width — the BitIntegers types are
+  primitive isbits types, so `Dict` hashing and the zero-allocation contract are
+  unaffected.
+- **Bits above `N` are always zero** (constructor invariant). The typed fast paths
+  rely on it and do not re-mask; the `Integer` convenience constructors mask for you.
+  Negative `Integer` inputs are two's-complement reinterpreted then masked, so the
+  historical `PauliBasis{128}(Int128(-1), Int128(-1))` still means "all 128 bits on".
+- **Words never mix.** Binary operations require both operands to share `W`; a
+  mismatch is a `MethodError` rather than a silent integer promotion (which would
+  corrupt `Dict` key equality). In practice you only ever meet mixed words by
+  constructing a non-canonical `W` deliberately.
+
+One consequence of parametric invariance to keep in mind when writing signatures:
+`Vector{PauliBasis{N}}` does **not** match a `Vector{PauliBasis{N,UInt64}}` — spell
+container element types fully, e.g. `generators::Vector{PauliBasis{N,W}}`.

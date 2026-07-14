@@ -1,11 +1,16 @@
 """
-A scaled dyad operator `s * |ket><bra|`, up to 128 qubits.
+A scaled dyad operator `s * |ket><bra|`. The ket/bra bitstrings share the
+unsigned storage word `W` chosen from `N` (see [`word_type`](@ref)).
 """
-struct Dyad{N}  
-    s::ComplexF64  
-    ket::Ket{N}
-    bra::Bra{N} 
+struct Dyad{N, W<:Unsigned}
+    s::ComplexF64
+    ket::Ket{N,W}
+    bra::Bra{N,W}
 end
+
+# W inferred from the ket/bra arguments.
+Dyad{N}(s::Number, ket::Ket{N,W}, bra::Bra{N,W}) where {N, W<:Unsigned} =
+    Dyad{N,W}(ComplexF64(s), ket, bra)
 
 """
     Dyad(ket::Vector{T}, bra::Vector{T}) where T<:Union{Bool, Integer}

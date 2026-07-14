@@ -7,7 +7,7 @@ function Base.sum!(ps1::PauliSum{N}, ps2::PauliSum{N}) where {N}
     mergewith!(+, ps1, ps2)
 end
 
-function Base.sum!(ps1::PauliSum{N,T}, ps2::Adjoint{<:Any, PauliSum{N,T}}) where {N,T}
+function Base.sum!(ps1::PauliSum{N,W,T}, ps2::Adjoint{<:Any, PauliSum{N,W,T}}) where {N,W,T}
     for (pauli, coeff) in ps2.parent
         if haskey(ps1, pauli)
             ps1[pauli] += coeff'
@@ -19,7 +19,7 @@ function Base.sum!(ps1::PauliSum{N,T}, ps2::Adjoint{<:Any, PauliSum{N,T}}) where
 end
 
 
-function Base.sum!(O::KetSum{N,T}, k::KetSum{N}) where {N,T}
+function Base.sum!(O::KetSum{N,W,T}, k::KetSum{N}) where {N,W,T}
     out = KetSum(N)
     for (p,c) in O
         c2,k2 = p*k
@@ -30,7 +30,7 @@ function Base.sum!(O::KetSum{N,T}, k::KetSum{N}) where {N,T}
 end
 
 
-Base.:+(ps2::Adjoint{<:Any, PauliSum{N,T}}, ps1::PauliSum{N,T}) where {N,T} = ps1 + ps2 
+Base.:+(ps2::Adjoint{<:Any, PauliSum{N,W,T}}, ps1::PauliSum{N,W,T}) where {N,W,T} = ps1 + ps2 
 
 
 function Base.:+(ps1::PauliSum, ps2::PauliSum)
@@ -45,13 +45,13 @@ function Base.:+(ps1::DyadSum, ps2::DyadSum)
     return out
 end
 
-function Base.:+(ks1::KetSum{N,T}, ks2::KetSum{N,T}) where {N,T}
+function Base.:+(ks1::KetSum{N,W,T}, ks2::KetSum{N,W,T}) where {N,W,T}
     out = deepcopy(ks2)
     mergewith!(+, out, ks1)
     return out
 end
 
-function Base.:-(ks1::KetSum{N,T}, ks2::KetSum{N,T}) where {N,T}
+function Base.:-(ks1::KetSum{N,W,T}, ks2::KetSum{N,W,T}) where {N,W,T}
     out = deepcopy(ks2)
     map!(x->-x, values(out))
     mergewith!(+, out, ks1)
@@ -78,7 +78,7 @@ function Base.:-(ps1::DyadSum, ps2::DyadSum)
     return out 
 end
 
-function Base.:+(ps1::PauliSum{N,T}, ps2::Adjoint{<:Any, PauliSum{N,T}}) where {N,T}
+function Base.:+(ps1::PauliSum{N,W,T}, ps2::Adjoint{<:Any, PauliSum{N,W,T}}) where {N,W,T}
     out = deepcopy(ps1)
     sum!(out, ps2)
     return out

@@ -1,5 +1,5 @@
 """
-    commutator(A::PauliSum{N,T}, B::PauliSum{N,T}) where {N,T}
+    commutator(A::PauliSum{N,W,T}, B::PauliSum{N,W,T}) where {N,W,T}
 
 Compute the commutator `[A, B] = AB - BA` using an optimized single-pass algorithm.
 
@@ -13,7 +13,7 @@ the phase exponent `k` (where phase = `i^k`) is computed directly from bitstring
 operations. For non-commuting pairs, `k` is always odd (phase is `±i`), so the
 imaginary part is `±1` and can be determined by a single integer comparison.
 """
-function commutator(A::PauliSum{N,T}, B::PauliSum{N,T}) where {N,T}
+function commutator(A::PauliSum{N,W,T}, B::PauliSum{N,W,T}) where {N,W,T}
     out = PauliSum(N, T)
     for (pa, ca) in A
         n_a = count_ones(pa.z & pa.x)
@@ -48,7 +48,7 @@ function commutator(A::PauliSum{N,T}, B::PauliSum{N,T}) where {N,T}
 end
 
 """
-    anticommutator(A::PauliSum{N,T}, B::PauliSum{N,T}) where {N,T}
+    anticommutator(A::PauliSum{N,W,T}, B::PauliSum{N,W,T}) where {N,W,T}
 
 Compute the anticommutator `{A, B} = AB + BA` using an optimized single-pass algorithm.
 
@@ -58,7 +58,7 @@ Anti-commuting pairs (where the phase is purely imaginary) are skipped entirely.
 
 Uses the same bitstring-only phase computation as `commutator`.
 """
-function anticommutator(A::PauliSum{N,T}, B::PauliSum{N,T}) where {N,T}
+function anticommutator(A::PauliSum{N,W,T}, B::PauliSum{N,W,T}) where {N,W,T}
     out = PauliSum(N, T)
     for (pa, ca) in A
         n_a = count_ones(pa.z & pa.x)

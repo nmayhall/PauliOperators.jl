@@ -55,16 +55,16 @@ function get_majorana_weight_probs(O::AnyPauliSum{N}) where N
 end
 
 """
-    find_top_k(O::PauliSum{N,T}, k::Int) where {N,T}
+    find_top_k(O::PauliSum{N,W,T}, k::Int) where {N,W,T}
 
 Return the `k` terms with largest absolute coefficients, sorted by decreasing |c|.
 Returns a `Vector{Pair{PauliBasis{N}, T}}`. Efficient for k << length(O).
 """
-function find_top_k(O::AnyPauliSum{N,T}, k::Int) where {N,T}
+function find_top_k(O::AnyPauliSum{N,W,T}, k::Int) where {N,W,T}
     k > 0 || throw(ArgumentError("k must be positive"))
     k = min(k, length(O))
 
-    top_keys = Vector{PauliBasis{N}}(undef, k)
+    top_keys = Vector{PauliBasis{N,W}}(undef, k)
     top_vals = Vector{T}(undef, k)
     top_abs = Vector{Float64}(undef, k)
 
@@ -106,27 +106,27 @@ function find_top_k(O::AnyPauliSum{N,T}, k::Int) where {N,T}
 end
 
 """
-    largest(ps::PauliSum{N,T}) where {N,T}
+    largest(ps::PauliSum{N,W,T}) where {N,W,T}
 
 Return the term with the largest absolute coefficient as a single-term PauliSum.
 """
-function largest(ps::PauliSum{N,T}) where {N,T}
+function largest(ps::PauliSum{N,W,T}) where {N,W,T}
     _, max_key = findmax(v -> abs(v), ps)
-    return PauliSum{N,T}(max_key => ps[max_key])
+    return PauliSum{N,W,T}(max_key => ps[max_key])
 end
 
 """
-    largest_diag(ps::PauliSum{N,T}) where {N,T}
+    largest_diag(ps::PauliSum{N,W,T}) where {N,W,T}
 
 Return the `PauliBasis => coefficient` pair for the diagonal term (x == 0)
 with the largest absolute coefficient.
 """
-function largest_diag(ps::PauliSum{N,T}) where {N,T}
+function largest_diag(ps::PauliSum{N,W,T}) where {N,W,T}
     return argmax(kv -> abs(last(kv)), filter(p -> p.first.x == 0, ps))
 end
 
 """
-    Base.Matrix(O::PauliSum{N,T}, S::Vector{Ket{N}}) where {N,T}
+    Base.Matrix(O::PauliSum{N,W,T}, S::Vector{Ket{N,W}}) where {N,W,T}
 
 Construct the matrix representation of operator `O` in the subspace spanned by kets `S`.
 
@@ -135,24 +135,24 @@ Returns an `nS × nS` matrix where `M[i,j] = ⟨S[i]|O|S[j]⟩`.
 Uses X-bitstring grouping for efficiency: for each ket pair `(i,j)`, only Pauli terms
 whose X-bitstring matches `S[i].v ⊻ S[j].v` are visited, rather than all terms in `O`.
 """
-function Base.Matrix(O::AnyPauliSum{N,T}, S::Vector{Ket{N}}) where {N,T}
+function Base.Matrix(O::AnyPauliSum{N,W,T}, S::Vector{Ket{N,W}}) where {N,W,T}
     nS = length(S)
 
     # Group Pauli terms by X-bitstring for efficient subspace matrix construction.
     # Only terms with x == S[i].v ⊻ S[j].v contribute to M[i,j].
-    x_groups = Dict{Int128, Vector{Tuple{Int128, T}}}()
+    x_groups = Dict{W, Vector{Tuple{W, T}}}()
     for (P, c) in O
-        group = get!(Vector{Tuple{Int128, T}}, x_groups, P.x)
+        group = get!(Vector{Tuple{W, T}}, x_groups, P.x)
         push!(group, (P.z, c))
     end
 
-    empty_group = Vector{Tuple{Int128, T}}()
+    empty_group = Vector{Tuple{W, T}}()
 
     M = zeros(promote_type(T, ComplexF64), nS, nS)
     for i in 1:nS
         M[i, i] = expectation_value(O, S[i])
         for j in i+1:nS
-            x = S[i].v ⊻ S[j].v
+            x = _to_word(W, N, S[i].v ⊻ S[j].v)
             for (z, c) in get(x_groups, x, empty_group)
                 P = PauliBasis{N}(z, x)
                 phase, _ = P * S[j]
@@ -167,13 +167,13 @@ function Base.Matrix(O::AnyPauliSum{N,T}, S::Vector{Ket{N}}) where {N,T}
 end
 
 """
-    Base.Vector(K::KetSum{N,T}, S::Vector{Ket{N}}) where {N,T}
+    Base.Vector(K::KetSum{N,W,T}, S::Vector{Ket{N,W}}) where {N,W,T}
 
 Project a KetSum onto the subspace defined by basis kets `S`.
 
 Returns a vector of length `length(S)` with `v[i] = K[S[i]]`.
 """
-function Base.Vector(K::KetSum{N,T}, S::Vector{Ket{N}}) where {N,T}
+function Base.Vector(K::KetSum{N,W,T}, S::Vector{Ket{N,W}}) where {N,W,T}
     nS = length(S)
     v = zeros(T, nS)
     for (i, ki) in enumerate(S)

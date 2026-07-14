@@ -46,13 +46,27 @@ Phase definitions:
 
 Since we need to keep track of a phase for a Pauli, we might as well let it become a general scalar value for broader use. As such, `Pauli.s` is a arbitrary complex number.
 """
-struct Pauli{N} 
+struct Pauli{N, W<:Unsigned}
     s::ComplexF64
-    z::Int128
-    x::Int128
+    z::W
+    x::W
+
+    function Pauli{N,W}(s::Number, z::W, x::W) where {N, W<:Unsigned}
+        8 * sizeof(W) >= N || throw(ArgumentError("$W is too narrow for N=$N"))
+        return new{N,W}(ComplexF64(s), z, x)
+    end
 end
 
-PauliTypes{N} = Union{Pauli{N}, PauliBasis{N}}
+# Hot path: W inferred from the arguments, no masking (caller invariant).
+Pauli{N}(s::Number, z::W, x::W) where {N, W<:Unsigned} = Pauli{N,W}(s, z, x)
+
+# Convenience paths: any Integer, masked to the low N bits, canonical W.
+Pauli{N}(s::Number, z::Integer, x::Integer) where {N} =
+    (W = word_type(N); Pauli{N,W}(s, _to_word(W, N, z), _to_word(W, N, x)))
+Pauli{N,W}(s::Number, z::Integer, x::Integer) where {N, W<:Unsigned} =
+    Pauli{N,W}(s, _to_word(W, N, z), _to_word(W, N, x))
+
+PauliTypes{N,W} = Union{Pauli{N,W}, PauliBasis{N,W}}
 
 """
     coeff(p::Pauli)
@@ -73,8 +87,10 @@ end
 Construct a `Pauli{N}` from integer bitstrings `z` and `x` with scalar `s=1`.
 """
 function Pauli(z::I, x::I, N) where I<:Integer
-    z < Int128(2)^N || throw(DimensionMismatch)
-    x < Int128(2)^N || throw(DimensionMismatch)
+    W = word_type(N)
+    m = _nbit_mask(W, N)
+    (z >= 0 && (z % W) & ~m == zero(W)) || throw(DimensionMismatch)
+    (x >= 0 && (x % W) & ~m == zero(W)) || throw(DimensionMismatch)
     return Pauli{N}(1, z, x)
 end
 
@@ -93,23 +109,22 @@ function Pauli(str::String)
         i in ['I', 'Z', 'X', 'Y'] || error("Bad string: ", str)
     end
 
-    x = Int128(0)
-    z = Int128(0)
-    ny = 0 
     N = length(str)
-    idx = Int128(1)
-    two = Int128(2)
-    one = Int128(1)
+    W = word_type(N)
+    x = zero(W)
+    z = zero(W)
+    ny = 0
+    idx = 0
 
     for i in str
         if i in ['X', 'Y']
-            x |= two^(idx-one)
+            x |= one(W) << idx
             if i == 'Y'
                 ny += 1
             end
         end
         if i in ['Z', 'Y']
-            z |= two^(idx-one)
+            z |= one(W) << idx
         end
         idx += 1
     end
@@ -184,10 +199,13 @@ end
 
 Generate a random `Pauli{N}` with random `z`, `x` bitstrings and a random complex scalar.
 """
-function Base.rand(T::Type{Pauli{N}}) where N
-    max_val = Int128(2)^N - Int128(1)
-    return Pauli{N}(randn(ComplexF64), rand(Int128) & max_val, rand(Int128) & max_val)
+function Base.rand(::Type{Pauli{N}}) where N
+    W = word_type(N)
+    m = _nbit_mask(W, N)
+    return Pauli{N,W}(randn(ComplexF64), rand(W) & m, rand(W) & m)
 end
+Base.rand(::Type{Pauli{N,W}}) where {N, W<:Unsigned} =
+    (m = _nbit_mask(W, N); Pauli{N,W}(randn(ComplexF64), rand(W) & m, rand(W) & m))
 
 
 function nY(p::Pauli)
@@ -259,11 +277,11 @@ Base.:*(s::Number, p::Pauli{N}) where N = p*s
 
 Add two `Pauli`'s together, return a `PauliSum`
 """
-function Base.:+(p::PauliTypes{N}, q::PauliTypes{N}) where N
+function Base.:+(p::PauliTypes{N,W}, q::PauliTypes{N,W}) where {N,W}
     if PauliBasis(p) == PauliBasis(q)
-        return PauliSum{N, ComplexF64}(PauliBasis(p) => coeff(p)+coeff(q))
-    else 
-        return PauliSum{N, ComplexF64}(PauliBasis(p) => coeff(p), PauliBasis(q) => coeff(q))
+        return PauliSum{N, W, ComplexF64}(PauliBasis(p) => coeff(p)+coeff(q))
+    else
+        return PauliSum{N, W, ComplexF64}(PauliBasis(p) => coeff(p), PauliBasis(q) => coeff(q))
     end
 end
 
@@ -272,8 +290,9 @@ end
 
 Tensor product of two Paulis, returning a `Pauli{N+M}`.
 """
-function otimes(p1::Pauli{N}, p2::Pauli{M}) where {N,M} 
-    Pauli{N+M}(p1.s * p2.s, p1.z | p2.z << N, p1.x | p2.x << N)
+function otimes(p1::Pauli{N}, p2::Pauli{M}) where {N,M}
+    W = word_type(N + M)
+    Pauli{N+M,W}(p1.s * p2.s, W(p1.z) | W(p2.z) << N, W(p1.x) | W(p2.x) << N)
 end
 
 """

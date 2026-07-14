@@ -57,7 +57,7 @@ using LinearAlgebra
         ps_orig[p3] = 0.1    # above ε
 
         n_trials = 50000
-        avg = Dict{PauliBasis{N}, Float64}()
+        avg = Dict{PauliBasis{N,PauliOperators.word_type(N)}, Float64}()
         for basis in keys(ps_orig)
             avg[basis] = 0.0
         end
@@ -92,7 +92,7 @@ using LinearAlgebra
         ps_orig[p2] = 0.03 - 0.02im
 
         n_trials = 50000
-        avg = Dict{PauliBasis{N}, ComplexF64}()
+        avg = Dict{PauliBasis{N,PauliOperators.word_type(N)}, ComplexF64}()
         for basis in keys(ps_orig)
             avg[basis] = 0.0 + 0.0im
         end

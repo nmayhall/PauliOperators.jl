@@ -130,8 +130,8 @@ end
 appends — expectation is linear, so the pre-merge state evaluates exactly.
 Allocation-free.
 """
-expectation_value(v::SparsePauliVector{N,W,T}, ψ::Ket{N}) where {N,W,T} =
-    _expectation_spv(v, (ψ.v % UInt128) % W)
+expectation_value(v::SparsePauliVector{N,W,T}, ψ::Ket{N,W}) where {N,W,T} =
+    _expectation_spv(v, ψ.v)
 
 # ------------------------------------------------------------
 # Windowed evolution driver
@@ -309,7 +309,7 @@ the buffer at the boundary if the population genuinely needs more room.
 The steady-state hot path allocates zero bytes — pass a `WindowCounters`
 to verify (`counters.allocd`).
 """
-function evolve!(O::SparsePauliVector{N,W,T}, generators::Vector{PauliBasis{N}},
+function evolve!(O::SparsePauliVector{N,W,T}, generators::Vector{PauliBasis{N,W}},
                  angles::Vector{<:Real};
                  window::Int=1,
                  truncation::TruncationStrategy=NoTruncation(),
@@ -391,6 +391,6 @@ end
 
 Non-mutating sequence evolution (see `evolve!`).
 """
-evolve(O::SparsePauliVector{N}, generators::Vector{PauliBasis{N}},
-       angles::Vector{<:Real}; kwargs...) where {N} =
+evolve(O::SparsePauliVector{N,W}, generators::Vector{PauliBasis{N,W}},
+       angles::Vector{<:Real}; kwargs...) where {N,W} =
     evolve!(copy(O), generators, angles; kwargs...)

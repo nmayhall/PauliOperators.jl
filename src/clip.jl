@@ -82,39 +82,12 @@ of Majorana operators needed to represent the Pauli string in the Jordan-Wigner 
 # Algorithm
 Uses a branchless O(1) bitwise algorithm. The original per-bit scan tracks a `control`
 flag that starts `true` (at the MSB) and flips at each X/Y site. This is equivalent to
-a suffix parity of the X-bitstring, computed via parallel prefix XOR (7 steps for Int128).
+a suffix parity of the X-bitstring, computed via a parallel prefix XOR cascade
+sized to the storage word (see `_majorana_weight_bits` in helpers.jl).
 The control mask then selects which Z-only and I-only positions contribute to the weight.
 """
-function majorana_weight(p::Union{PauliBasis{N}, Pauli{N}}) where N
-    # Use unsigned to ensure logical (zero-filling) right shifts
-    xbits = unsigned(p.x)       # X/Y positions (both X and Y have x-bit set)
-    zbits = unsigned(p.z) & ~xbits   # Z-only positions
-
-    # Suffix XOR: after this, bit j of S = XOR of xbits at positions j, j+1, ..., 127
-    # This computes the running parity of X/Y sites from MSB downward
-    S = xbits
-    S ⊻= S >> 1
-    S ⊻= S >> 2
-    S ⊻= S >> 4
-    S ⊻= S >> 8
-    S ⊻= S >> 16
-    S ⊻= S >> 32
-    S ⊻= S >> 64
-
-    # Control mask: bit j is set iff control=true at position j
-    # control(j) = true ⊕ (parity of xbits at positions j+1..N-1)
-    #            = NOT(suffix_xor(j) ⊕ xbits(j))
-    # Above N bits: S=0, xbits=0, so ctrl=all 1s → ~ctrl=all 0s (auto-masks)
-    ctrl = ~(S ⊻ xbits)
-
-    # Weight contributions:
-    #   X/Y sites: always +1
-    #   Z-only sites where control=true: +2
-    #   I-only sites where control=false: +2
-    return count_ones(xbits) +
-           2 * count_ones(zbits & ctrl) +
-           2 * count_ones(~(unsigned(p.z) | xbits) & ~ctrl)
-end
+majorana_weight(p::Union{PauliBasis{N}, Pauli{N}}) where N =
+    _majorana_weight_bits(p.z, p.x)
 
 """
     majorana_weight_clip!(ps::PauliSum{N}, max_weight::Int) where {N}
@@ -143,7 +116,7 @@ end
 clip!(ks::KetSum; thresh=1e-16) = coeff_clip!(ks, thresh)
 
 """
-    stochastic_clip!(ps::PauliSum{N,T}, ε::Real; rng=Random.default_rng())
+    stochastic_clip!(ps::PauliSum{N,W,T}, ε::Real; rng=Random.default_rng())
 
 Unbiased stochastic compression (Russian Roulette) of a PauliSum.
 
@@ -153,9 +126,9 @@ For each term (basis, c):
 
 This is unbiased: E[c̃] = c for every term.
 """
-function stochastic_clip!(ps::PauliSum{N,T}, ε::Real;
-                          rng::AbstractRNG=Random.default_rng()) where {N,T}
-    to_delete = PauliBasis{N}[]
+function stochastic_clip!(ps::PauliSum{N,W,T}, ε::Real;
+                          rng::AbstractRNG=Random.default_rng()) where {N,W,T}
+    to_delete = PauliBasis{N,W}[]
 
     for (basis, c) in ps
         ac = abs(c)
@@ -175,20 +148,20 @@ function stochastic_clip!(ps::PauliSum{N,T}, ε::Real;
 end
 
 """
-    offdiag(ps::PauliSum{N,T}) where {N,T}
+    offdiag(ps::PauliSum{N,W,T}) where {N,W,T}
 
 Return a new `PauliSum` containing only the off-diagonal terms (those with `x != 0`).
 """
-function offdiag(ps::PauliSum{N,T}) where {N,T}
+function offdiag(ps::PauliSum{N,W,T}) where {N,W,T}
     return filter(p->p.first.x != 0, ps)
 end
 
 """
-    LinearAlgebra.diag(ps::PauliSum{N,T}) where {N,T}
+    LinearAlgebra.diag(ps::PauliSum{N,W,T}) where {N,W,T}
 
 Return a new `PauliSum` containing only the diagonal terms (those with `x == 0`,
 i.e., only Z and I factors).
 """
-function LinearAlgebra.diag(ps::PauliSum{N,T}) where {N,T}
+function LinearAlgebra.diag(ps::PauliSum{N,W,T}) where {N,W,T}
     return filter(p->p.first.x == 0, ps)
 end

@@ -99,7 +99,7 @@ end
         @test expectation_value(v1, ψ) ≈ expectation_value(ps1, ψ)
         d = rand(Dyad{N})
         db = rand(DyadBasis{N})
-        ds = rand(DyadSum{N, ComplexF64})
+        ds = rand(DyadSum{N, PauliOperators.word_type(N), ComplexF64})
         @test expectation_value(v1, d) ≈ expectation_value(ps1, d)
         @test expectation_value(v1, db) ≈ expectation_value(ps1, db)
         @test expectation_value(v1, ds) ≈ expectation_value(ps1, ds)

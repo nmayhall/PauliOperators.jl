@@ -23,6 +23,7 @@ makedocs(;
             "Truncation" => "truncation.md",
         ],
         "Migration Guides" => [
+            "v3 → v4 (word types)" => "migration_v4.md",
             "DBF.jl" => "migration_DBF.md",
             "DissipativePauliGroundState.jl" => "migration_DissipativePauliGroundState.md",
             "OpenSCI.jl" => "migration_OpenSCI.md",

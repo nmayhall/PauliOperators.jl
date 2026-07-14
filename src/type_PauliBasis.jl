@@ -1,26 +1,40 @@
 
 """
-    z::Int128
-    x::Int128
+    z::W
+    x::W
 
 A positive, Hermitian Pauli, used as a basis for more general `Pauli`'s (which can have a complex phase).
 These are primarily used to provide a basis for linear combinations of Paulis, e.g., `PauliSum`'s.
-    
-    PauliBasis{N}(z,x)  =  i^θs ⋅ z₁...|x₁... 
+
+    PauliBasis{N}(z,x)  =  i^θs ⋅ z₁...|x₁...
                             =  P₁⊗...⊗Pₙ
+
+The bitstrings are stored in an unsigned word `W` sized to `N` by
+`word_type(N)` (`UInt64` up to 64 qubits, ..., `UInt1024` up to 1024).
+`W` never needs to be written explicitly: `PauliBasis{N}(z, x)` infers it.
 
 Phase definitions:
 - `symplectic_phase`: `θs` - phase needed to cancel the phase arising from the ZX factorized form: `θs = θ-θg`
 """
-struct PauliBasis{N}
-    z::Int128
-    x::Int128
+struct PauliBasis{N, W<:Unsigned}
+    z::W
+    x::W
 
-    # Add an inner constructor that validates N is a value type
-    PauliBasis{N}(z::Int128, x::Int128) where {N} = new{N}(z, x)
+    function PauliBasis{N,W}(z::W, x::W) where {N, W<:Unsigned}
+        8 * sizeof(W) >= N || throw(ArgumentError("$W is too narrow for N=$N"))
+        return new{N,W}(z, x)
+    end
 end
 
-PauliBasis{N}(z::Integer, x::Integer) where {N} = PauliBasis{N}(Int128(z), Int128(x))
+# Hot path: W inferred from the arguments, no masking (caller invariant).
+PauliBasis{N}(z::W, x::W) where {N, W<:Unsigned} = PauliBasis{N,W}(z, x)
+
+# Convenience paths: any Integer (negative values are two's-complement
+# reinterpreted), masked to the low N bits, canonical W.
+PauliBasis{N}(z::Integer, x::Integer) where {N} =
+    (W = word_type(N); PauliBasis{N,W}(_to_word(W, N, z), _to_word(W, N, x)))
+PauliBasis{N,W}(z::Integer, x::Integer) where {N, W<:Unsigned} =
+    PauliBasis{N,W}(_to_word(W, N, z), _to_word(W, N, x))
 
 LinearAlgebra.ishermitian(p::PauliBasis) = true
 coeff(p::PauliBasis) = 1
@@ -40,23 +54,18 @@ function PauliBasis(str::String)
         i in ['I', 'Z', 'X', 'Y'] || error("Bad string: ", str)
     end
 
-    x = Int128(0)
-    z = Int128(0)
-    ny = 0 
     N = length(str)
-    idx = Int128(1)
-    two = Int128(2)
-    one = Int128(1)
+    W = word_type(N)
+    x = zero(W)
+    z = zero(W)
+    idx = 0
 
     for i in str
         if i in ['X', 'Y']
-            x |= two^(idx-one)
-            if i == 'Y'
-                ny += 1
-            end
+            x |= one(W) << idx
         end
         if i in ['Z', 'Y']
-            z |= two^(idx-one)
+            z |= one(W) << idx
         end
         idx += 1
     end
@@ -119,16 +128,20 @@ function Base.string(p::PauliBasis{N}) where N
     return join(out)
 end
 
-function Base.rand(T::Type{PauliBasis{N}}) where N
-    max_val = Int128(2)^N - Int128(1)
-    return PauliBasis{N}(rand(Int128) & max_val, rand(Int128) & max_val)
+function Base.rand(::Type{PauliBasis{N}}) where N
+    W = word_type(N)
+    m = _nbit_mask(W, N)
+    return PauliBasis{N,W}(rand(W) & m, rand(W) & m)
 end
+Base.rand(::Type{PauliBasis{N,W}}) where {N, W<:Unsigned} =
+    (m = _nbit_mask(W, N); PauliBasis{N,W}(rand(W) & m, rand(W) & m))
 
 
 Base.show(io::IO, p::PauliBasis{N}) where N = print(io, string(p))
 
-function otimes(p1::PauliBasis{N}, p2::PauliBasis{M}) where {N,M} 
-    PauliBasis{N+M}(p1.z | p2.z << N, p1.x | p2.x << N)
+function otimes(p1::PauliBasis{N}, p2::PauliBasis{M}) where {N,M}
+    W = word_type(N + M)
+    PauliBasis{N+M,W}(W(p1.z) | W(p2.z) << N, W(p1.x) | W(p2.x) << N)
 end
 
 Base.:*(p1::PauliBasis, p2::PauliBasis) = Pauli(p1) * Pauli(p2)

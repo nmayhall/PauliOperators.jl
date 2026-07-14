@@ -11,10 +11,10 @@ using Random
     types = []
     push!(types, PauliBasis{N})
     push!(types, Pauli{N})
-    push!(types, PauliSum{N, ComplexF64})
+    push!(types, PauliSum{N, PauliOperators.word_type(N), ComplexF64})
     push!(types, DyadBasis{N})
     push!(types, Dyad{N})
-    push!(types, DyadSum{N, ComplexF64})
+    push!(types, DyadSum{N, PauliOperators.word_type(N), ComplexF64})
 
     for T1 in types
         for T2 in types
@@ -40,10 +40,10 @@ end
     types2 = []
     push!(types1, PauliBasis{N})
     push!(types1, Pauli{N})
-    # push!(types1, PauliSum{N, ComplexF64})
+    # push!(types1, PauliSum{N, PauliOperators.word_type(N), ComplexF64})
     # push!(types1, DyadBasis{N})
     # push!(types1, Dyad{N})
-    # push!(types1, DyadSum{N, ComplexF64})
+    # push!(types1, DyadSum{N, PauliOperators.word_type(N), ComplexF64})
     # push!(types2, Ket{N})
     push!(types2, KetSum{N})
 
@@ -70,10 +70,10 @@ end
     types = []
     push!(types, PauliBasis{N})
     push!(types, Pauli{N})
-    push!(types, PauliSum{N, ComplexF64})
+    push!(types, PauliSum{N, PauliOperators.word_type(N), ComplexF64})
     push!(types, DyadBasis{N})
     push!(types, Dyad{N})
-    push!(types, DyadSum{N, ComplexF64})
+    push!(types, DyadSum{N, PauliOperators.word_type(N), ComplexF64})
 
     for T1 in types
         for T2 in types
@@ -98,10 +98,10 @@ end
     types = []
     push!(types, PauliBasis{N})
     push!(types, Pauli{N})
-    push!(types, PauliSum{N, ComplexF64})
+    push!(types, PauliSum{N, PauliOperators.word_type(N), ComplexF64})
     push!(types, DyadBasis{N})
     push!(types, Dyad{N})
-    push!(types, DyadSum{N, ComplexF64})
+    push!(types, DyadSum{N, PauliOperators.word_type(N), ComplexF64})
 
     for T1 in types
         for T2 in types
@@ -126,10 +126,10 @@ end
     types = []
     push!(types, PauliBasis{N})
     push!(types, Pauli{N})
-    push!(types, PauliSum{N, ComplexF64})
+    push!(types, PauliSum{N, PauliOperators.word_type(N), ComplexF64})
     push!(types, DyadBasis{N})
     push!(types, Dyad{N})
-    push!(types, DyadSum{N, ComplexF64})
+    push!(types, DyadSum{N, PauliOperators.word_type(N), ComplexF64})
 
     for T1 in types
         for T2 in types
@@ -154,10 +154,10 @@ end
     types = []
     push!(types, PauliBasis{N})
     push!(types, Pauli{N})
-    push!(types, PauliSum{N, ComplexF64})
+    push!(types, PauliSum{N, PauliOperators.word_type(N), ComplexF64})
     push!(types, DyadBasis{N})
     push!(types, Dyad{N})
-    push!(types, DyadSum{N, ComplexF64})
+    push!(types, DyadSum{N, PauliOperators.word_type(N), ComplexF64})
 
     for T1 in types
         for i in 1:10
@@ -185,10 +185,10 @@ end
     types = []
     push!(types, PauliBasis{N})
     push!(types, Pauli{N})
-    push!(types, PauliSum{N, ComplexF64})
+    push!(types, PauliSum{N, PauliOperators.word_type(N), ComplexF64})
     push!(types, DyadBasis{N})
     push!(types, Dyad{N})
-    push!(types, DyadSum{N, ComplexF64})
+    push!(types, DyadSum{N, PauliOperators.word_type(N), ComplexF64})
 
     for T1 in types
         for i in 1:10
@@ -223,13 +223,13 @@ end
     N  = 5
 
     for i in 1:10
-        a = rand(PauliSum{N, ComplexF64}, n_paulis=10)
-        b = rand(PauliSum{N, ComplexF64}, n_paulis=12)
+        a = rand(PauliSum{N, PauliOperators.word_type(N), ComplexF64}, n_paulis=10)
+        b = rand(PauliSum{N, PauliOperators.word_type(N), ComplexF64}, n_paulis=12)
         err = tr(Matrix(a)'*Matrix(b))/2^N - inner_product(a,b)
         @test abs(err) < 1e-12
         
-        a = rand(KetSum{N, ComplexF64}, n_terms=10)
-        b = rand(KetSum{N, ComplexF64}, n_terms=12)
+        a = rand(KetSum{N, PauliOperators.word_type(N), ComplexF64}, n_terms=10)
+        b = rand(KetSum{N, PauliOperators.word_type(N), ComplexF64}, n_terms=12)
         err = Vector(a)'*Vector(b) - inner_product(a,b)
         @test abs(err) < 1e-12
     end

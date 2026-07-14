@@ -1,12 +1,12 @@
 """
-    LinearAlgebra.norm(ps::PauliSum{N,T}, p::Real=2) where {N,T}
+    LinearAlgebra.norm(ps::PauliSum{N,W,T}, p::Real=2) where {N,W,T}
 
 Compute the p-norm of the coefficient vector of a `PauliSum`.
 - `p=2` (default): Frobenius norm `sqrt(sum(|c_i|^2))`
 - `p=1`: L1 norm `sum(|c_i|)`
 - `p=Inf`: max norm `max(|c_i|)`
 """
-function LinearAlgebra.norm(ps::PauliSum{N,T}, p::Real=2) where {N,T}
+function LinearAlgebra.norm(ps::PauliSum{N,W,T}, p::Real=2) where {N,W,T}
     if p == 2
         s = zero(real(T))
         for (_, c) in ps
@@ -38,11 +38,11 @@ function LinearAlgebra.norm(ps::PauliSum{N,T}, p::Real=2) where {N,T}
 end
 
 """
-    LinearAlgebra.norm(ks::KetSum{N,T}, p::Real=2) where {N,T}
+    LinearAlgebra.norm(ks::KetSum{N,W,T}, p::Real=2) where {N,W,T}
 
 Compute the p-norm of the coefficient vector of a `KetSum`.
 """
-function LinearAlgebra.norm(ks::KetSum{N,T}, p::Real=2) where {N,T}
+function LinearAlgebra.norm(ks::KetSum{N,W,T}, p::Real=2) where {N,W,T}
     if p == 2
         s = zero(real(T))
         for (_, c) in ks

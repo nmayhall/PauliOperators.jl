@@ -1,9 +1,9 @@
 """
-    inner_product(O1::PauliSum{N,T}, O2::PauliSum{N,T}) where {N,T}
+    inner_product(O1::PauliSum{N,W,T}, O2::PauliSum{N,W,T}) where {N,W,T}
 
 Evaluate the Liouville space inner product: tr(O1'*O2)
 """
-function inner_product(O1::PauliSum{N,T}, O2::PauliSum{N,T}) where {N,T}
+function inner_product(O1::PauliSum{N,W,T}, O2::PauliSum{N,W,T}) where {N,W,T}
     out = T(0)
     if length(O1) < length(O2)
         for (p1,c1) in O1
@@ -21,7 +21,7 @@ function inner_product(O1::PauliSum{N,T}, O2::PauliSum{N,T}) where {N,T}
     return out
 end
 
-function inner_product(k1::KetSum{N,T}, k2::KetSum{N,T}) where {N,T}
+function inner_product(k1::KetSum{N,W,T}, k2::KetSum{N,W,T}) where {N,W,T}
     out = T(0)
     if length(k1) < length(k2)
         for (p1,c1) in k1

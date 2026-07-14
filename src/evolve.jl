@@ -1,12 +1,12 @@
 """
-    evolve(O::PauliSum{N, T}, G::PauliBasis{N}, θ::Real)
+    evolve(O::PauliSum{N, W, T}, G::PauliBasis{N}, θ::Real)
 
 Heisenberg-picture evolution: O(θ) = exp(iθ/2 G) O exp(-iθ/2 G)
 
 Commuting terms pass through unchanged. Non-commuting terms branch:
     O(θ) = cos(θ)·O - i·sin(θ)·G·O
 """
-function evolve(O::PauliSum{N, T}, G::PauliBasis{N}, θ::Real) where {N,T}
+function evolve(O::PauliSum{N, W, T}, G::PauliBasis{N}, θ::Real) where {N,W,T}
     _cos = cos(θ)
     _sin = 1im*sin(θ)
     cos_branch = deepcopy(O)
@@ -25,11 +25,11 @@ end
 
 
 """
-    evolve!(O::PauliSum{N, T}, G::PauliBasis{N}, θ::Real)
+    evolve!(O::PauliSum{N, W, T}, G::PauliBasis{N}, θ::Real)
 
 In-place Heisenberg-picture evolution: O(θ) = exp(iθ/2 G) O exp(-iθ/2 G)
 """
-function evolve!(O::PauliSum{N, T}, G::PauliBasis{N}, θ::Real) where {N,T}
+function evolve!(O::PauliSum{N, W, T}, G::PauliBasis{N}, θ::Real) where {N,W,T}
     _cos = cos(θ)
     _sin = 1im*sin(θ)
     sin_branch = PauliSum(N)
@@ -46,13 +46,13 @@ function evolve!(O::PauliSum{N, T}, G::PauliBasis{N}, θ::Real) where {N,T}
 end
 
 """
-    evolve(K::KetSum{N, T}, G::PauliBasis{N}, θ::Real)
+    evolve(K::KetSum{N, W, T}, G::PauliBasis{N}, θ::Real)
 
 Schrödinger-picture evolution: K(θ) = exp(-iθ/2 G) K
 
 Applies the unitary exp(-iθ/2 G) to a KetSum state vector.
 """
-function evolve(K::KetSum{N, T}, G::PauliBasis{N}, θ::Real) where {N,T}
+function evolve(K::KetSum{N, W, T}, G::PauliBasis{N}, θ::Real) where {N,W,T}
     _cos = cos(θ/2)
     _sin = -1im*sin(θ/2)
     K2 = KetSum(N, T=ComplexF64)
@@ -71,14 +71,14 @@ function evolve(K::KetSum{N, T}, G::PauliBasis{N}, θ::Real) where {N,T}
 end
 
 """
-    evolve!(K::KetSum{N, ComplexF64}, G::PauliBasis{N}, θ::Real)
+    evolve!(K::KetSum{N, W, ComplexF64}, G::PauliBasis{N}, θ::Real)
 
 In-place Schrödinger-picture evolution: K → exp(-iθ/2 G) K
 
 Modifies `K` in place. Element type must be `ComplexF64` so that the
 imaginary contribution from the sine branch can be stored back in `K`.
 """
-function evolve!(K::KetSum{N, ComplexF64}, G::PauliBasis{N}, θ::Real) where {N}
+function evolve!(K::KetSum{N, W, ComplexF64}, G::PauliBasis{N}, θ::Real) where {N,W}
     _cos = cos(θ/2)
     _sin = -1im*sin(θ/2)
     GK = KetSum(N, T=ComplexF64)
@@ -96,7 +96,7 @@ function evolve!(K::KetSum{N, ComplexF64}, G::PauliBasis{N}, θ::Real) where {N}
 end
 
 """
-    evolve(O::PauliSum{N,T}, generators::Vector{PauliBasis{N}}, angles::Vector{<:Real};
+    evolve(O::PauliSum{N,W,T}, generators::Vector{PauliBasis{N}}, angles::Vector{<:Real};
            truncation::TruncationStrategy=NoTruncation(),
            correction::CorrectionAccumulator=NoCorrection())
 
@@ -108,9 +108,9 @@ where Uₖ = exp(-iθₖ/2 Gₖ). The effective right-side unitary is U₁U₂�
 
 Sequences from `trotterize` and `qdrift` are designed for this convention.
 """
-function evolve(O::PauliSum{N,T}, generators::Vector{PauliBasis{N}}, angles::Vector{<:Real};
+function evolve(O::PauliSum{N,W,T}, generators::Vector{PauliBasis{N,W}}, angles::Vector{<:Real};
                 truncation::TruncationStrategy=NoTruncation(),
-                correction::CorrectionAccumulator=NoCorrection()) where {N,T}
+                correction::CorrectionAccumulator=NoCorrection()) where {N,W,T}
     length(generators) == length(angles) || throw(DimensionMismatch("generators and angles must have same length"))
     Ot = deepcopy(O)
     for (gi, θi) in zip(generators, angles)
@@ -121,7 +121,7 @@ function evolve(O::PauliSum{N,T}, generators::Vector{PauliBasis{N}}, angles::Vec
 end
 
 """
-    evolve(K::KetSum{N,T}, generators::Vector{PauliBasis{N}}, angles::Vector{<:Real})
+    evolve(K::KetSum{N,W,T}, generators::Vector{PauliBasis{N}}, angles::Vector{<:Real})
 
 Schrödinger-picture sequence evolution: applies generators left to right, producing
 
@@ -134,7 +134,7 @@ To use them with KetSum, reverse the sequence:
 
     evolve(K, reverse(generators), reverse(angles))
 """
-function evolve(K::KetSum{N,T}, generators::Vector{PauliBasis{N}}, angles::Vector{<:Real}) where {N,T}
+function evolve(K::KetSum{N,W,T}, generators::Vector{PauliBasis{N,W}}, angles::Vector{<:Real}) where {N,W,T}
     length(generators) == length(angles) || throw(DimensionMismatch("generators and angles must have same length"))
     Kt = deepcopy(K)
     for (gi, θi) in zip(generators, angles)

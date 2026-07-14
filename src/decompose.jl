@@ -1,5 +1,5 @@
 """
-    trotterize(H::PauliSum{N,T}, dt::Real; n_trotter::Int=1, order::Int=1)
+    trotterize(H::PauliSum{N,W,T}, dt::Real; n_trotter::Int=1, order::Int=1)
 
 Decompose the time evolution operator exp(-i dt H) into a sequence of Pauli rotations
 using the Lie-Trotter-Suzuki product formula.
@@ -14,15 +14,15 @@ Each factor exp(-i dt c_k P_k) = exp(i θ/2 P_k) with θ = -2 dt Re(c_k) in the
 Heisenberg picture convention used by `evolve`.
 
 # Arguments
-- `H::PauliSum{N,T}`: Hamiltonian (should be Hermitian, so coefficients are real)
+- `H::PauliSum{N,W,T}`: Hamiltonian (should be Hermitian, so coefficients are real)
 - `dt::Real`: time step
 - `n_trotter::Int=1`: number of Trotter steps (dt is divided by n_trotter)
 - `order::Int=1`: Trotter order (1 = first-order, 2 = second-order symmetric)
 """
-function trotterize(H::AnyPauliSum{N,T}, dt::Real; n_trotter::Int=1, order::Int=1) where {N,T}
+function trotterize(H::AnyPauliSum{N,W,T}, dt::Real; n_trotter::Int=1, order::Int=1) where {N,W,T}
     order in (1, 2) || throw(ArgumentError("Only order=1 and order=2 Trotter decompositions are supported"))
 
-    generators = PauliBasis{N}[]
+    generators = PauliBasis{N,W}[]
     angles = Float64[]
     step_dt = dt / n_trotter
 
@@ -53,7 +53,7 @@ function trotterize(H::AnyPauliSum{N,T}, dt::Real; n_trotter::Int=1, order::Int=
 end
 
 """
-    qdrift(H::PauliSum{N,T}, dt::Real; n_samples::Int=1, rng::AbstractRNG=Random.default_rng())
+    qdrift(H::PauliSum{N,W,T}, dt::Real; n_samples::Int=1, rng::AbstractRNG=Random.default_rng())
 
 Decompose time evolution using the QDrift protocol (Campbell, 2019).
 
@@ -66,13 +66,13 @@ is the 1-norm of the coefficients.
 Returns `(generators::Vector{PauliBasis{N}}, angles::Vector{Float64})`.
 
 # Arguments
-- `H::PauliSum{N,T}`: Hamiltonian
+- `H::PauliSum{N,W,T}`: Hamiltonian
 - `dt::Real`: time step
 - `n_samples::Int=1`: number of random samples (more = better approximation)
 - `rng::AbstractRNG`: random number generator
 """
-function qdrift(H::AnyPauliSum{N,T}, dt::Real; n_samples::Int=1,
-                rng::AbstractRNG=Random.default_rng()) where {N,T}
+function qdrift(H::AnyPauliSum{N,W,T}, dt::Real; n_samples::Int=1,
+                rng::AbstractRNG=Random.default_rng()) where {N,W,T}
     terms = collect(H)
     coeffs = [real(c) for (_, c) in terms]
     abs_coeffs = abs.(coeffs)
@@ -83,7 +83,7 @@ function qdrift(H::AnyPauliSum{N,T}, dt::Real; n_samples::Int=1,
     # Build cumulative distribution for sampling
     cum_probs = cumsum(probs)
 
-    generators = PauliBasis{N}[]
+    generators = PauliBasis{N,W}[]
     angles = Float64[]
 
     for _ in 1:n_samples

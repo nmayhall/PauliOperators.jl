@@ -359,9 +359,9 @@ end
 
 function osum(v1::SparsePauliVector{N,W1,T}, v2::SparsePauliVector{M,W2,T}) where {N,M,W1,W2,T}
     I_N = SparsePauliVector(N, T)
-    I_N[PauliBasis{N}(Int128(0), Int128(0))] = one(T)
+    I_N[PauliBasis{N}(0, 0)] = one(T)
     I_M = SparsePauliVector(M, T)
-    I_M[PauliBasis{M}(Int128(0), Int128(0))] = one(T)
+    I_M[PauliBasis{M}(0, 0)] = one(T)
     return v1 ⊗ I_M + I_N ⊗ v2
 end
 

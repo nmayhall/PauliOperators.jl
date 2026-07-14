@@ -4,10 +4,14 @@ Since the product of two arbitrary dyad's don't generally create another dyad (e
 As such the product of two `DyadBasis` objects is not a `DyadBasis` object, but a `Dyad`, which contains a scalar factor. 
 This type is primarily used to provide a basis for linear combinations of `Dyad`'s, e.g., `DyadSum`'s.
 """
-struct DyadBasis{N}  
-    ket::Ket{N}
-    bra::Bra{N} 
+struct DyadBasis{N, W<:Unsigned}
+    ket::Ket{N,W}
+    bra::Bra{N,W}
 end
+
+# W inferred from the ket/bra arguments.
+DyadBasis{N}(ket::Ket{N,W}, bra::Bra{N,W}) where {N, W<:Unsigned} =
+    DyadBasis{N,W}(ket, bra)
 
 
 DyadBasis(d::DyadBasis) = d
@@ -29,7 +33,7 @@ end
 Create an `N`-qubit `DyadBasis` from integer ket index `k` and bra index `b`.
 """
 function DyadBasis(N::Integer, k::Integer, b::Integer)
-    return DyadBasis{N}(Ket{N}(Int128(k)), Bra{N}(Int128(b)))
+    return DyadBasis{Int(N)}(Ket{Int(N)}(k), Bra{Int(N)}(b))
 end
 
 Base.rand(::Type{DyadBasis{N}}) where N = DyadBasis{N}(rand(Ket{N}), rand(Bra{N}))

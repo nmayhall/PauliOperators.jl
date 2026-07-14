@@ -12,7 +12,7 @@
 [![Build Status (v3-dev)](https://github.com/nmayhall/PauliOperators.jl/actions/workflows/CI.yml/badge.svg?branch=v3-dev)](https://github.com/nmayhall/PauliOperators.jl/actions/workflows/CI.yml?query=branch%3Av3-dev)
 [![Coverage (v3-dev)](https://codecov.io/gh/nmayhall/PauliOperators.jl/branch/v3-dev/graph/badge.svg)](https://codecov.io/gh/nmayhall/PauliOperators.jl/tree/v3-dev)
 
-A Julia package for efficient manipulation of Pauli operators and quantum states using bitstring representations. The package uses symplectic representation to encode tensor products of Pauli operators as pairs of binary strings, enabling fast operations on systems with up to 128 qubits.
+A Julia package for efficient manipulation of Pauli operators and quantum states using bitstring representations. The package uses symplectic representation to encode tensor products of Pauli operators as pairs of binary strings, enabling fast operations on systems with up to 1024 qubits (via BitIntegers.jl wide words; the storage word is sized to the qubit count, so small systems use narrow, fast words).
 
 ## Installation
 
@@ -33,84 +33,92 @@ P_n =& i^\theta Z^{z_1} X^{x_1} ⊗ Z^{z_2} X^{x_2} ⊗ ⋯ ⊗ Z^{z_N} X^{x_N} 
 \end{align}
 $$
 
-where the $z$ and $x$ strings are encoded as bitwise representations of `Int128` integers, supporting up to 128 qubits. The $Y$ operator (or rather $iY$) is represented by setting both $x_i$ and $z_i$ to 1.
+where the $z$ and $x$ strings are encoded as bitwise representations of unsigned integers sized to the qubit count (`UInt64` up to 64 qubits, `UInt128` up to 128, then `UInt256`/`UInt512`/`UInt1024` from BitIntegers.jl up to 1024 qubits). The $Y$ operator (or rather $iY$) is represented by setting both $x_i$ and $z_i$ to 1.
 
 > The full encoding — phase conventions, bit ordering, and the bit-level product and commutator identities the kernels are built on — is documented in [Pauli Representation](https://nmayhall.github.io/PauliOperators.jl/dev/representation/) in the docs.
 
 ## Types
 
+Every bitstring-carrying type takes two parameters: the qubit count `N` and the
+unsigned **storage word** `W`, chosen automatically from `N` by `word_type(N)`
+(`UInt64` for `N ≤ 64`, `UInt128` for `N ≤ 128`, then `UInt256`/`UInt512`/`UInt1024`
+up to 1024 qubits). You never need to write `W` yourself — `PauliBasis{N}(z, x)`,
+`Pauli("XYZ")`, `rand(Ket{200})`, `PauliSum(500)` all infer it. Small systems get
+small, fast words; wide systems just work.
+
 ### Pauli Operators
 
-- **`PauliBasis{N}`**: Hermitian, positive Pauli basis elements. These form the basis for linear combinations and are used as keys in `PauliSum` dictionaries.
+- **`PauliBasis{N,W}`**: Hermitian, positive Pauli basis elements. These form the basis for linear combinations and are used as keys in `PauliSum` dictionaries.
 ```julia
-  struct PauliBasis{N}
-      z::Int128  # Z operator bitstring
-      x::Int128  # X operator bitstring
+  struct PauliBasis{N, W<:Unsigned}
+      z::W  # Z operator bitstring
+      x::W  # X operator bitstring
   end
 ```
 
-- **`Pauli{N}`**: General Pauli operator with an arbitrary complex coefficient, allowing representation of scaled and phased Pauli strings.
+- **`Pauli{N,W}`**: General Pauli operator with an arbitrary complex coefficient, allowing representation of scaled and phased Pauli strings.
 ```julia
-  struct Pauli{N}
+  struct Pauli{N, W<:Unsigned}
       s::ComplexF64           # Coefficient
-      z::Int128               # Z operator bitstring
-      x::Int128               # X operator bitstring
+      z::W                    # Z operator bitstring
+      x::W                    # X operator bitstring
   end
 ```
 
-- **`PauliSum{N,T}`**: Linear combination of Pauli operators, implemented as a dictionary mapping `PauliBasis{N}` to coefficients of type `T`.
+- **`PauliSum{N,W,T}`**: Linear combination of Pauli operators, implemented as a dictionary mapping `PauliBasis{N,W}` to coefficients of type `T`.
 ```julia
-  PauliSum{N,T} = Dict{PauliBasis{N}, T}
+  PauliSum{N,W,T} = Dict{PauliBasis{N,W}, T}
 ```
 
 - **`SparsePauliVector{N,W,T}`**: The same mathematical object as `PauliSum`, stored as flat sorted arrays instead of a `Dict` — a much faster engine for evolution-heavy workloads. See [Fast Pauli propagation with SparsePauliVector](#fast-pauli-propagation-with-sparsepaulivector) below.
 
 ### Quantum States
 
-- **`Ket{N}` and `Bra{N}`**: Computational basis states represented as bitstrings.
+- **`Ket{N,W}` and `Bra{N,W}`**: Computational basis states represented as bitstrings.
 ```julia
-  struct Ket{N}
-      v::Int128  # Occupation number bitstring
+  struct Ket{N, W<:Unsigned}
+      v::W  # Occupation number bitstring
   end
 
-  struct Bra{N}
-      v::Int128
+  struct Bra{N, W<:Unsigned}
+      v::W
   end
 ```
 
-- **`KetSum{N,T}`**: Linear combination of computational basis states.
+- **`KetSum{N,W,T}`**: Linear combination of computational basis states.
 ```julia
-  KetSum{N,T} = Dict{Ket{N}, T}
+  KetSum{N,W,T} = Dict{Ket{N,W}, T}
 ```
 
 ### Density Matrix Elements
 
-- **`DyadBasis{N}`**: Basis elements for density matrices and operators, representing outer products $|i⟩⟨j|$.
+- **`DyadBasis{N,W}`**: Basis elements for density matrices and operators, representing outer products $|i⟩⟨j|$.
 ```julia
-  struct DyadBasis{N}
-      ket::Ket{N}
-      bra::Bra{N}
+  struct DyadBasis{N, W<:Unsigned}
+      ket::Ket{N,W}
+      bra::Bra{N,W}
   end
 ```
 
-- **`Dyad{N}`**: Scaled dyads with complex coefficients.
+- **`Dyad{N,W}`**: Scaled dyads with complex coefficients.
 ```julia
-  struct Dyad{N}
+  struct Dyad{N, W<:Unsigned}
       s::ComplexF64
-      ket::Ket{N}
-      bra::Bra{N}
+      ket::Ket{N,W}
+      bra::Bra{N,W}
   end
 ```
 
-- **`DyadSum{N,T}`**: Linear combination of dyads, useful for representing density matrices and general operators.
+- **`DyadSum{N,W,T}`**: Linear combination of dyads, useful for representing density matrices and general operators.
 ```julia
-  DyadSum{N,T} = Dict{DyadBasis{N}, T}
+  DyadSum{N,W,T} = Dict{DyadBasis{N,W}, T}
 ```
 
 ## Key Features
 
+- **Up to 1024 Qubits**: The storage word scales with the register — `xor`/`popcount` on the wide BitIntegers.jl words compile to straight-line SIMD code, so cost grows with bandwidth, not with dispatch overhead
 - **Efficient Operations**: Pauli multiplication, addition, and tensor products using bitwise operations
-- **Zero Allocations**: Core operations are allocation-free when the number of qubits `N` is a compile-time constant
+- **Zero Allocations**: Core operations are allocation-free when the number of qubits `N` is a compile-time constant — including on the wide word types
 - **Flexible Arithmetic**: Overloaded operators (`*`, `+`, `⊗`, `⊕`) for intuitive manipulation
 - **Quantum Computations**:
   - `expectation_value(operator, state)` - compute expectation values
@@ -292,7 +300,7 @@ O = PauliSum(v)               # gather back into a Dict-based PauliSum anytime
 Key points:
 
 - **Exact `PauliSum` parity**: at `window=1` (the default), `evolve!` reproduces the `Dict`-based `evolve!`/`truncate!` sequence exactly — same terms, same truncation decisions. `window > 1` amortizes deduplication and truncation over the window for speed.
-- **Bandwidth-lean types**: keys are packed into `UInt64` when `N ≤ 64` (chosen automatically), and `T=Float64` halves coefficient bandwidth for Hermitian operators.
+- **Bandwidth-lean types**: keys use the same size-matched word `W` as every other type (`UInt64` when `N ≤ 64`, up to `UInt1024`), and `T=Float64` halves coefficient bandwidth for Hermitian operators.
 - **When to use which**: `PauliSum` for construction and one-off algebra (`O(1)` inserts); `SparsePauliVector` for long rotation sequences and allocation-free hot loops (`setindex!` is `O(n)`, so build in bulk and convert).
 
 > The storage layout, the windowed evolution algorithm, and performance guidance are documented in [Data Structures & Performance](https://nmayhall.github.io/PauliOperators.jl/dev/data_structures/) in the docs.
@@ -383,3 +391,23 @@ The package is designed for high performance with zero-allocation operations:
 - State manipulations
 
 When `N` (number of qubits) is known at compile time, all core operations are performed without heap allocations, making this package suitable for performance-critical quantum simulations. For evolution-heavy workloads, the [`SparsePauliVector` engine](#fast-pauli-propagation-with-sparsepaulivector) extends the zero-allocation guarantee to entire rotation/truncation sweeps.
+
+Because the storage word is sized to the register, cost scales with the bits actually
+used: a `Pauli{60}` product runs on `UInt64` words (~5 ns, faster than the old
+fixed-`Int128` layout), while a `Pauli{1024}` product on `UInt1024` words costs only
+~3.3× the 128-qubit time for 8× the bits. Measured before/after tables live in
+[`bench/RESULTS.md`](bench/RESULTS.md); rerun them with `julia -O3 bench/bench_words.jl`.
+
+## Upgrading from v3
+
+Value-level code is unchanged in v4 — `PauliSum(N)`, `Pauli("XYZ")`, `PauliBasis{N}(z, x)`,
+`Ket(N, v)` all work as before. Only explicit type annotations need updating:
+
+| v3 | v4 |
+| --- | --- |
+| `PauliSum{N,T}` in a signature | `PauliSum{N,W,T}` + add `W` to `where` (or use `PauliSum{N}`) |
+| `KetSum{N,T}` / `DyadSum{N,T}` | `KetSum{N,W,T}` / `DyadSum{N,W,T}` |
+| `Vector{PauliBasis{N}}` | `Vector{PauliBasis{N,W}}` (invariance — the old form no longer matches) |
+| `p.z::Int128` field access | fields are now unsigned (`UInt64`/`UInt128`/…); negative `Integer` inputs to constructors are still accepted (two's-complement, masked to `N` bits) |
+
+See the [v4 migration guide](https://nmayhall.github.io/PauliOperators.jl/dev/migration_v4/) for details.

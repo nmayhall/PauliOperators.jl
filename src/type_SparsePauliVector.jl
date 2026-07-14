@@ -8,30 +8,14 @@
 # per-term heap objects, isbits data only.
 # ============================================================
 
-"""
-    _word_type(N)
+# Word selection lives in word.jl (`word_type`, aliased `_word_type`).
 
-Packed bit-word type for an `N`-qubit register: `UInt64` when the bits fit
-(halves bit bandwidth), `UInt128` up to 128 qubits.
-
-Beyond 128 qubits the intended extension is BitIntegers.jl (`UInt256`,
-`UInt512`, ... are primitive `Unsigned` types supporting `⊻`, `&`,
-`count_ones`, `<` natively), so every kernel is written generically over
-`W<:Unsigned` with standard operators — adding larger lattices later means
-extending this one function (plus a wider `PauliBasis` for conversions).
-"""
-_word_type(N::Integer) = N <= 64 ? UInt64 :
-                         N <= 128 ? UInt128 :
-                         error("N > 128 requires a multi-word type " *
-                               "(add BitIntegers.jl and extend _word_type)")
-
-# All key packing/unpacking goes through these two functions. The double
-# `%` zero-extends: `Int128 % W` alone would sign-extend for W wider than
-# 128 bits, and N = 128 uses the Int128 sign bit.
-@inline _pack(::Type{W}, p::PauliBasis) where {W<:Unsigned} =
-    ((p.z % UInt128) % W, (p.x % UInt128) % W)
-@inline _unpack(::Type{PauliBasis{N}}, z::W, x::W) where {N,W<:Unsigned} =
-    PauliBasis{N}((z % UInt128) % Int128, (x % UInt128) % Int128)
+# All key packing/unpacking goes through these two functions. Now that
+# PauliBasis stores W directly they are trivial, but they remain the seam
+# between the Dict and flat representations.
+@inline _pack(::Type{W}, p::PauliBasis{N,W}) where {N, W<:Unsigned} = (p.z, p.x)
+@inline _unpack(::Type{PauliBasis{N}}, z::W, x::W) where {N, W<:Unsigned} =
+    PauliBasis{N,W}(z, x)
 
 const _HIST_BINS = 64
 
@@ -39,7 +23,7 @@ const _HIST_BINS = 64
     SparsePauliVector{N,W,T}
 
 A sum of `N`-qubit Pauli terms stored as flat sorted parallel arrays — the
-zero-allocation replacement for the `Dict`-backed `PauliSum{N,T}`. `W` is
+zero-allocation replacement for the `Dict`-backed `PauliSum{N,W,T}`. `W` is
 the packed bit-word type (`UInt64` for `N ≤ 64`, chosen automatically by
 the constructors), `T` the coefficient type (`Float64` suffices for
 Hermitian operators and halves coefficient bandwidth).
@@ -84,12 +68,12 @@ mutable struct SparsePauliVector{N, W<:Unsigned, T<:Number}
 end
 
 """
-    AnyPauliSum{N,T}
+    AnyPauliSum{N,W,T}
 
 Union of the two Pauli-sum representations, for methods that only iterate
 `(PauliBasis, coefficient)` pairs and work identically on both.
 """
-AnyPauliSum{N,T} = Union{PauliSum{N,T}, SparsePauliVector{N,W,T} where W}
+AnyPauliSum{N,W,T} = Union{PauliSum{N,W,T}, SparsePauliVector{N,W,T}}
 
 function _alloc_spv(N::Int, ::Type{W}, ::Type{T}, live_cap::Int, append_cap::Int) where {W,T}
     return SparsePauliVector{N,W,T}(
@@ -164,14 +148,13 @@ hot-loop reallocation.
 Real `T` requires (numerically) real coefficients: terms with
 `|imag(c)| > imag_tol·max(1,|c|)` are an error.
 """
-function SparsePauliVector(O::PauliSum{N,T0};
+function SparsePauliVector(O::PauliSum{N,W,T0};
                            T::Type{<:Number}=T0,
                            capacity_factor::Real=2.0,
                            append_factor::Real=1.0,
                            min_capacity::Int=16,
-                           imag_tol::Real=1e-10) where {N,T0}
+                           imag_tol::Real=1e-10) where {N,W,T0}
     capacity_factor >= 1 || throw(ArgumentError("capacity_factor must be >= 1"))
-    W = _word_type(N)
     live_cap = max(min_capacity, ceil(Int, capacity_factor * max(length(O), 1)))
     append_cap = max(min_capacity, ceil(Int, append_factor * live_cap))
     v = _alloc_spv(Int(N), W, T, live_cap, append_cap)
@@ -220,7 +203,7 @@ function PauliSum(v::SparsePauliVector{N,W,T}) where {N,W,T}
     return out
 end
 
-function Base.convert(::Type{PauliSum{N,T}}, v::SparsePauliVector{N}) where {N,T}
+function Base.convert(::Type{PauliSum{N,W,T}}, v::SparsePauliVector{N,W}) where {N,W,T}
     out = PauliSum(N, T)
     sizehint!(out, v.n)
     for (p, c) in v

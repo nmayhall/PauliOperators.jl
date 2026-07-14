@@ -44,22 +44,7 @@ end
 const NOFILTER = MergeFilter(typemax(Int), typemax(Int), typemax(Int), -1.0,
                              0.0, -1.0, 0.0, -1.0)
 
-# Branchless-suffix-parity Majorana weight on packed words; the word-level
-# analogue of `majorana_weight(::PauliBasis)` (see clip.jl for the
-# derivation). The shift cascade covers 8*sizeof(W) bits, so it stays
-# correct for wider (BitIntegers.jl) word types.
-@inline function _majorana_weight_bits(z::W, x::W) where {W<:Unsigned}
-    zonly = z & ~x
-    S = x
-    shift = 1
-    while shift < 8 * sizeof(W)
-        S ⊻= S >> shift
-        shift <<= 1
-    end
-    ctrl = ~(S ⊻ x)
-    return count_ones(x) + 2 * count_ones(zonly & ctrl) +
-           2 * count_ones(~(z | x) & ~ctrl)
-end
+# `_majorana_weight_bits` lives in helpers.jl (shared with the Dict path).
 
 @inline function should_drop(f::MergeFilter, z::W, x::W, absc::Float64) where {W<:Unsigned}
     absc <= f.thresh && return true

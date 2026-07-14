@@ -4,7 +4,9 @@ module PauliOperators
     using LinearAlgebra
     using StaticArrays
     using Random
+    using BitIntegers
 
+    include("word.jl")
     include("helpers.jl")
     include("type_PauliBasis.jl")
     include("type_Pauli.jl")
@@ -57,6 +59,7 @@ module PauliOperators
     export matrix_element
     export inner_product
 
+    export word_type
     export symplectic_phase
     export coeff
     export commute

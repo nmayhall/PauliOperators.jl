@@ -12,13 +12,22 @@ using PauliOperators: check_spv, _word_type, _pack, _unpack
         @test _word_type(64) == UInt64
         @test _word_type(65) == UInt128
         @test _word_type(128) == UInt128
-        @test_throws ErrorException _word_type(129)
+        @test _word_type(129) == PauliOperators.UInt256
+        @test _word_type(256) == PauliOperators.UInt256
+        @test _word_type(257) == PauliOperators.UInt512
+        @test _word_type(512) == PauliOperators.UInt512
+        @test _word_type(513) == PauliOperators.UInt1024
+        @test _word_type(1024) == PauliOperators.UInt1024
+        @test_throws ArgumentError _word_type(1025)
+        @test_throws ArgumentError _word_type(0)
 
         v = SparsePauliVector(4)
         @test v isa SparsePauliVector{4, UInt64, ComplexF64}
         v = SparsePauliVector(70, Float64)
         @test v isa SparsePauliVector{70, UInt128, Float64}
-        @test_throws ErrorException SparsePauliVector(129)
+        v = SparsePauliVector(200)
+        @test v isa SparsePauliVector{200, PauliOperators.UInt256, ComplexF64}
+        @test_throws ArgumentError SparsePauliVector(1025)
     end
 
     @testset "pack/unpack round-trip incl. sign bit" begin
@@ -61,7 +70,7 @@ using PauliOperators: check_spv, _word_type, _pack, _unpack
         ps = rand(PauliSum{5}; n_paulis=10)
         v = convert(SparsePauliVector{5, UInt64, ComplexF64}, ps)
         @test PauliSum(v) == ps
-        @test convert(PauliSum{5, ComplexF64}, v) == ps
+        @test convert(PauliSum{5, UInt64, ComplexF64}, v) == ps
     end
 
     @testset "Dict-idiom parity" begin

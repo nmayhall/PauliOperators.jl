@@ -6,7 +6,9 @@ CurrentModule = PauliOperators
 
 Documentation for [PauliOperators](https://github.com/nmayhall/PauliOperators.jl), a
 Julia package for efficient manipulation of Pauli operators and quantum states using
-symplectic bitstring representations, supporting up to 128 qubits.
+symplectic bitstring representations, supporting up to 1024 qubits. The bitstring
+storage word is sized to the register (`UInt64` up to 64 qubits, through `UInt1024`
+via BitIntegers.jl), so small systems pay nothing for the large-system capability.
 
 ## Where to look
 
@@ -25,5 +27,8 @@ This site covers what the README doesn't — the lower-level material:
 - **[Truncation](truncation.md)** — the weight measures, the exact semantics of every
   truncation strategy, error tracking with correction accumulators, and how to extend
   the system.
+- **[Migrating to v4](migration_v4.md)** — the word-type parameterization
+  (`PauliBasis{N,W}`, `PauliSum{N,W,T}`, >128 qubits): what breaks, what doesn't, and
+  the mechanical signature rewrites.
 - **Migration Guides** — updating downstream packages to PauliOperators v3.
 - **Reference** — docstrings for all [types](types.md) and [functions](functions.md).

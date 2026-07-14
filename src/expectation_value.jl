@@ -27,12 +27,12 @@ function expectation_value(p::Union{PauliBasis{N}, Pauli{N}}, d::Union{Dyad{N}, 
 end
 
 """
-    expectation_value(p::PauliSum{N,T}, d::Union{Ket{N}, Dyad{N}, DyadBasis{N}})
+    expectation_value(p::PauliSum{N,W,T}, d::Union{Ket{N}, Dyad{N}, DyadBasis{N}})
 
 Expectation value of a sum of Paulis against a basis state or dyad —
 the coefficient-weighted sum of the per-term expectation values.
 """
-function expectation_value(p::PauliSum{N,T}, d::Union{Ket{N}, Dyad{N}, DyadBasis{N}}) where {N,T}
+function expectation_value(p::PauliSum{N,W,T}, d::Union{Ket{N}, Dyad{N}, DyadBasis{N}}) where {N,W,T}
     eval = zero(T)
     for (pi,ci) in p
         eval += expectation_value(pi, d) * ci
@@ -40,7 +40,7 @@ function expectation_value(p::PauliSum{N,T}, d::Union{Ket{N}, Dyad{N}, DyadBasis
     return eval 
 end
 
-function expectation_value(p::Union{PauliBasis{N}, Pauli{N}}, d::DyadSum{N,T}) where {N,T}
+function expectation_value(p::Union{PauliBasis{N}, Pauli{N}}, d::DyadSum{N,W,T}) where {N,W,T}
     eval = zero(T)
     for (di,ci) in d
         eval += expectation_value(p, di) * ci
@@ -48,7 +48,7 @@ function expectation_value(p::Union{PauliBasis{N}, Pauli{N}}, d::DyadSum{N,T}) w
     return eval 
 end
 
-function expectation_value(p::PauliSum{N,T}, d::DyadSum{N,T}) where {N,T}
+function expectation_value(p::PauliSum{N,W,T}, d::DyadSum{N,W,T}) where {N,W,T}
     eval = zero(T)
     for (pi,ci) in p
         for (dj,cj) in d
@@ -91,7 +91,7 @@ function matrix_element(b::Bra{N}, p::PauliBasis{N}, k::Ket{N}) where N
     return val * PHASE_TBL[(symplectic_phase(p) + 2*sgn)%4 + 1]
 end
 
-function matrix_element(b::Bra{N}, p::AnyPauliSum{N,T}, k::Ket{N}) where {N,T}
+function matrix_element(b::Bra{N}, p::AnyPauliSum{N,W,T}, k::Ket{N}) where {N,W,T}
     eval = zero(T)
     for (pi,ci) in p
         eval += matrix_element(b, pi, k) * ci

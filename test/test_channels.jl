@@ -320,7 +320,7 @@ end
     @test_throws ArgumentError depolarizing_channel!(deepcopy(O), 0.1; qubits=[N+1])
     @test_throws ArgumentError pauli_channel!(deepcopy(O), 0.1, 0.1, 0.1; qubits=4)
 
-    Oint = Dict{PauliBasis{N},Int}(PauliBasis("XIZ") => 1)
+    Oint = Dict{PauliBasis{N,PauliOperators.word_type(N)},Int}(PauliBasis("XIZ") => 1)
     @test_throws ArgumentError depolarizing_channel!(Oint, 0.1)
 end
 

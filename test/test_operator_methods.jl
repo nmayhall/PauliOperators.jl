@@ -13,11 +13,11 @@ using BenchmarkTools
     types = []
     push!(types, PauliBasis{N})
     push!(types, Pauli{N})
-    push!(types, PauliSum{N, ComplexF64})
+    push!(types, PauliSum{N, PauliOperators.word_type(N), ComplexF64})
     push!(types, SparsePauliVector{N, UInt64, ComplexF64})
     push!(types, Dyad{N})
     push!(types, DyadBasis{N})
-    push!(types, DyadSum{N, ComplexF64})
+    push!(types, DyadSum{N, PauliOperators.word_type(N), ComplexF64})
 
     for T in types
         # Hermiticity
@@ -88,10 +88,10 @@ end
     N  = 3
     types = []
     push!(types, Pauli{N})
-    push!(types, PauliSum{N,ComplexF64})
+    push!(types, PauliSum{N, PauliOperators.word_type(N), ComplexF64})
     push!(types, SparsePauliVector{N, UInt64, ComplexF64})
     push!(types, Dyad{N})
-    push!(types, DyadSum{N,ComplexF64})
+    push!(types, DyadSum{N, PauliOperators.word_type(N), ComplexF64})
 
     for T in types
         # Negate
@@ -112,11 +112,11 @@ end
     types = []
     push!(types, PauliBasis{N})
     push!(types, Pauli{N})
-    push!(types, PauliSum{N, ComplexF64})
+    push!(types, PauliSum{N, PauliOperators.word_type(N), ComplexF64})
     push!(types, SparsePauliVector{N, UInt64, ComplexF64})
     push!(types, DyadBasis{N})
     push!(types, Dyad{N})
-    push!(types, DyadSum{N, ComplexF64})
+    push!(types, DyadSum{N, PauliOperators.word_type(N), ComplexF64})
 
     for T in types
         for i in 1:20
@@ -146,21 +146,21 @@ end
     types1 = []
     push!(types1, PauliBasis{N})
     push!(types1, Pauli{N})
-    push!(types1, PauliSum{N, ComplexF64})
+    push!(types1, PauliSum{N, PauliOperators.word_type(N), ComplexF64})
     push!(types1, SparsePauliVector{N, UInt64, ComplexF64})
     push!(types1, DyadBasis{N})
     push!(types1, Dyad{N})
-    push!(types1, DyadSum{N, ComplexF64})
+    push!(types1, DyadSum{N, PauliOperators.word_type(N), ComplexF64})
     
     N = 2
     types2 = []
     push!(types2, PauliBasis{N})
     push!(types2, Pauli{N})
-    push!(types2, PauliSum{N, ComplexF64})
+    push!(types2, PauliSum{N, PauliOperators.word_type(N), ComplexF64})
     push!(types2, SparsePauliVector{N, UInt64, ComplexF64})
     push!(types2, DyadBasis{N})
     push!(types2, Dyad{N})
-    push!(types2, DyadSum{N, ComplexF64})
+    push!(types2, DyadSum{N, PauliOperators.word_type(N), ComplexF64})
 
     @test Pauli("X") ⊗ Pauli("Y") ⊗ Pauli("Z") == Pauli("XYZ")
     for Ti in 1:length(types1)
@@ -194,10 +194,10 @@ end
     N = 3
     types = []
     push!(types, Pauli{N})
-    push!(types, PauliSum{N, ComplexF64})
+    push!(types, PauliSum{N, PauliOperators.word_type(N), ComplexF64})
     push!(types, SparsePauliVector{N, UInt64, ComplexF64})
     push!(types, Dyad{N})
-    push!(types, DyadSum{N, ComplexF64})
+    push!(types, DyadSum{N, PauliOperators.word_type(N), ComplexF64})
     for T in types
         for i in 1:100
             # Now scalar multiplication
@@ -225,12 +225,12 @@ end
     typesB = []
     push!(typesA, PauliBasis{N})
     push!(typesA, Pauli{N})
-    push!(typesA, PauliSum{N, ComplexF64})
+    push!(typesA, PauliSum{N, PauliOperators.word_type(N), ComplexF64})
     push!(typesA, SparsePauliVector{N, UInt64, ComplexF64})
     push!(typesB, Ket{N})
     push!(typesB, DyadBasis{N})
     push!(typesB, Dyad{N})
-    push!(typesB, DyadSum{N, ComplexF64})
+    push!(typesB, DyadSum{N, PauliOperators.word_type(N), ComplexF64})
     for TA in typesA
         for TB in typesB
             for i in 1:100
@@ -268,12 +268,12 @@ end
     typesB = []
     push!(typesA, PauliBasis{N})
     # push!(typesA, Pauli{N})
-    push!(typesA, PauliSum{N, ComplexF64})
+    push!(typesA, PauliSum{N, PauliOperators.word_type(N), ComplexF64})
     push!(typesA, SparsePauliVector{N, UInt64, ComplexF64})
     push!(typesB, Ket{N})
     # push!(typesB, DyadBasis{N})
     # push!(typesB, Dyad{N})
-    # push!(typesB, DyadSum{N, ComplexF64})
+    # push!(typesB, DyadSum{N, PauliOperators.word_type(N), ComplexF64})
     for TA in typesA
         for TB in typesB
             for i in 1:100

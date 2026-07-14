@@ -1,13 +1,34 @@
 """
-An occupation number vector, up to 128 qubits
+An occupation number vector. The bitstring is stored in an unsigned word `W`
+sized to `N` by `word_type(N)` (up to 1024 qubits); `Ket{N}(v)` infers it.
 """
-struct Ket{N} 
-    v::Int128
+struct Ket{N, W<:Unsigned}
+    v::W
+
+    function Ket{N,W}(v::W) where {N, W<:Unsigned}
+        8 * sizeof(W) >= N || throw(ArgumentError("$W is too narrow for N=$N"))
+        return new{N,W}(v)
+    end
 end
 
-struct Bra{N}
-    v::Int128
+struct Bra{N, W<:Unsigned}
+    v::W
+
+    function Bra{N,W}(v::W) where {N, W<:Unsigned}
+        8 * sizeof(W) >= N || throw(ArgumentError("$W is too narrow for N=$N"))
+        return new{N,W}(v)
+    end
 end
+
+# Hot paths: W inferred from the argument, no masking (caller invariant).
+Ket{N}(v::W) where {N, W<:Unsigned} = Ket{N,W}(v)
+Bra{N}(v::W) where {N, W<:Unsigned} = Bra{N,W}(v)
+
+# Convenience paths: any Integer, masked to the low N bits, canonical W.
+Ket{N}(v::Integer) where {N} = (W = word_type(N); Ket{N,W}(_to_word(W, N, v)))
+Bra{N}(v::Integer) where {N} = (W = word_type(N); Bra{N,W}(_to_word(W, N, v)))
+Ket{N,W}(v::Integer) where {N, W<:Unsigned} = Ket{N,W}(_to_word(W, N, v))
+Bra{N,W}(v::Integer) where {N, W<:Unsigned} = Bra{N,W}(_to_word(W, N, v))
 
 """
     Ket(vec::Vector{T}) where T<:Union{Bool, Integer}
@@ -15,26 +36,26 @@ end
 Create a `Ket` from a vector of 0s and 1s representing qubit occupations.
 """
 function Ket(vec::Vector{T}) where T<:Union{Bool, Integer}
-    two = Int128(2)
-    v = Int128(0)
-
-    for i in 1:length(vec)
+    N = length(vec)
+    W = word_type(N)
+    v = zero(W)
+    for i in 1:N
         if vec[i] == 1
-            v |= two^(i-1)
+            v |= one(W) << (i-1)
         end
     end
-    return Ket{length(vec)}(v)
+    return Ket{N}(v)
 end
 function Bra(vec::Vector{T}) where T<:Union{Bool, Integer}
-    two = Int128(2)
-    v = Int128(0)
-
-    for i in 1:length(vec)
+    N = length(vec)
+    W = word_type(N)
+    v = zero(W)
+    for i in 1:N
         if vec[i] == 1
-            v |= two^(i-1)
+            v |= one(W) << (i-1)
         end
     end
-    return Bra{length(vec)}(v)
+    return Bra{N}(v)
 end
 
 """
@@ -42,18 +63,8 @@ end
 
 Create an `N`-qubit `Ket` from the integer `v` (bits beyond `N` are masked off).
 """
-function Ket(N::Integer, v::Integer)
-    for i in N+1:128
-        v &= ~(Int128(2)^(i-1))    
-    end
-    return Ket{N}(Int128(v))
-end
-function Bra(N::Integer, v::Integer)
-    for i in N+1:128
-        v &= ~(Int128(2)^(i-1))    
-    end
-    return Bra{N}(Int128(v))
-end
+Ket(N::Integer, v::Integer) = Ket{Int(N)}(v)
+Bra(N::Integer, v::Integer) = Bra{Int(N)}(v)
 
 
 function Base.size(d::Ket{N}) where N
@@ -68,8 +79,12 @@ Base.adjoint(d::Ket{N}) where N = Bra{N}(d.v)
 Base.adjoint(d::Bra{N}) where N = Ket{N}(d.v)
 
 
-Base.rand(T::Type{Ket{N}}) where N = T(rand(Int128) & (Int128(2)^N - Int128(1)))
-Base.rand(T::Type{Bra{N}}) where N = T(rand(Int128) & (Int128(2)^N - Int128(1)))
+Base.rand(::Type{Ket{N}}) where N =
+    (W = word_type(N); Ket{N,W}(rand(W) & _nbit_mask(W, N)))
+Base.rand(::Type{Bra{N}}) where N =
+    (W = word_type(N); Bra{N,W}(rand(W) & _nbit_mask(W, N)))
+Base.rand(::Type{Ket{N,W}}) where {N, W<:Unsigned} = Ket{N,W}(rand(W) & _nbit_mask(W, N))
+Base.rand(::Type{Bra{N,W}}) where {N, W<:Unsigned} = Bra{N,W}(rand(W) & _nbit_mask(W, N))
 
 
 @inline coeff(d::Ket) = 1 
@@ -87,14 +102,14 @@ function Base.show(io::IO, P::Union{Ket,Bra})
 end
 
 function Base.string(p::Ket{N}) where N
-    out = [0 for i in 1:128]
+    out = [0 for i in 1:8*sizeof(p.v)]
     for i in get_on_bits(p.v)
         out[i] = 1
     end
     return "|"*join(out[1:N])*">"
 end
 function Base.string(p::Bra{N}) where N
-    out = [0 for i in 1:128]
+    out = [0 for i in 1:8*sizeof(p.v)]
     for i in get_on_bits(p.v)
         out[i] = 1
     end
@@ -107,11 +122,11 @@ end
 
 Add two `Ket`'s together, return a `KetSum`
 """
-function Base.:+(p::Ket{N}, q::Ket{N}) where N
+function Base.:+(p::Ket{N,W}, q::Ket{N,W}) where {N,W}
     if p == q
-        return KetSum{N, ComplexF64}(p => 2) 
-    else 
-        return KetSum{N, ComplexF64}(p => 1, q => 1)
+        return KetSum{N, W, ComplexF64}(p => 2)
+    else
+        return KetSum{N, W, ComplexF64}(p => 1, q => 1)
     end
 end
 """
@@ -119,11 +134,11 @@ end
 
 Add two `Ket`'s together, return a `KetSum`
 """
-function Base.:+(p::Bra{N}, q::Bra{N}) where N
+function Base.:+(p::Bra{N,W}, q::Bra{N,W}) where {N,W}
     if p == q
-        return KetSum{N, ComplexF64}(p' => 2)'
-    else 
-        return KetSum{N, ComplexF64}(p' => 1, q' => 1)'
+        return KetSum{N, W, ComplexF64}(p' => 2)'
+    else
+        return KetSum{N, W, ComplexF64}(p' => 1, q' => 1)'
     end
 end
 
@@ -156,8 +171,10 @@ function Base.iterate(::Type{Ket{N}}, state = 1) where N
 end
 
 function otimes(k1::Ket{N}, k2::Ket{M}) where {N,M}
-    Ket{N+M}(k1.v | k2.v << N)
+    W = word_type(N + M)
+    Ket{N+M,W}(W(k1.v) | W(k2.v) << N)
 end
 function otimes(k1::Bra{N}, k2::Bra{M}) where {N,M}
-    Bra{N+M}(k1.v | k2.v << N)
+    W = word_type(N + M)
+    Bra{N+M,W}(W(k1.v) | W(k2.v) << N)
 end

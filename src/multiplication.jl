@@ -61,13 +61,15 @@ function Base.:*(d::Union{Dyad{N}, DyadBasis{N}}, p::Union{Pauli{N}, PauliBasis{
 end 
 
 function Base.:*(p::Union{Pauli{N}, PauliBasis{N}}, ks::KetSum{N,W,T}) where {N,W,T}
-    out = KetSum(N, T=T)
+    TT = promote_type(T, ComplexF64)
+    out = KetSum(N, T=TT)
+    sizehint!(out, length(ks))
     for (k,c) in ks
         c2,k2 = p*k
-        tmp = get(out, k2, 0.0)
+        tmp = get(out, k2, zero(TT))
         out[k2] = tmp + c2*c
     end
-    return out 
+    return out
 end
 
 
@@ -78,29 +80,53 @@ end
 Apply a sum of Paulis to a basis state, returning a `KetSum` with one entry
 per distinct `x` bitstring in `O`.
 """
-function Base.:*(O::PauliSum{N,W,T}, k::Ket{N}) where {N,W,T}
-    out = KetSum(N)
+function Base.:*(O::PauliSum{N,W,T}, k::Ket{N,W}) where {N,W,T}
+    TT = promote_type(T, ComplexF64)
+    out = KetSum(N, T=TT)
     for (p,c) in O
         c2,k2 = p*k
-        tmp = get(out, k2, 0.0)
+        tmp = get(out, k2, zero(TT))
         out[k2] = tmp + c2*c
     end
-    return out 
+    return out
 end
 
 """
-    Base.:*(O::AnyPauliSum{N}, ks::KetSum{N})
+    Base.:*(O::AnyPauliSum{N,W}, ks::KetSum{N,W})
 
 Apply a sum of Paulis to a linear combination of basis states:
-`(Σᵢ cᵢ Pᵢ)(Σₖ vₖ |k⟩)`. Returns a `ComplexF64` `KetSum`.
+`(Σᵢ cᵢ Pᵢ)(Σₖ vₖ |k⟩)`. Returns a complex `KetSum`.
+
+Terms are grouped by x-string: every Pauli in an x-group maps `|k⟩` to the
+same `|k ⊻ x⟩`, and its phase factors as
+`[i^sp(P)·(-1)^parity(z&x)] · (-1)^parity(z&k)` with the bracket a per-Pauli
+constant, so each group's contribution to a slot is accumulated in a register
+and the output Dict is touched once per (x-group, ket) instead of per
+(Pauli, ket).
 """
-function Base.:*(O::AnyPauliSum{N}, ks::KetSum{N}) where {N}
-    out = KetSum(N, T=ComplexF64)
+function Base.:*(O::AnyPauliSum{N,W,TO}, ks::KetSum{N,W,TK}) where {N,W,TO,TK}
+    TT = promote_type(TO, TK, ComplexF64)
+    groups = Dict{W,Tuple{Vector{W},Vector{TT}}}()
     for (p,c) in O
-        for (k,ck) in ks
-            c2,k2 = p*k
-            tmp = get(out, k2, zero(ComplexF64))
-            out[k2] = tmp + c2*c*ck
+        zs, cs = get!(() -> (W[], TT[]), groups, p.x)
+        s = count_ones(p.z & p.x) % 2
+        push!(zs, p.z)
+        push!(cs, PHASE_TBL[(symplectic_phase(p) + 2*s)%4 + 1] * c)
+    end
+    kv = collect(keys(ks))
+    cv = collect(values(ks))
+    out = KetSum(N, T=TT)
+    sizehint!(out, min(length(groups)*length(ks), 1 << 20))
+    for (x, (zs, cs)) in groups
+        m = length(zs)
+        for j in eachindex(kv)
+            v = kv[j].v
+            acc = zero(TT)
+            @inbounds @simd for i in 1:m
+                acc += ifelse(isodd(count_ones(zs[i] & v)), -cs[i], cs[i])
+            end
+            k2 = Ket{N}(x ⊻ v)
+            out[k2] = get(out, k2, zero(TT)) + acc*cv[j]
         end
     end
     return out

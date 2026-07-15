@@ -1,6 +1,9 @@
 *.jl.*.cov
 *.jl.cov
+*.pdf
+*.png
 *.jl.mem
 /docs/build/
 .DS_Store
+.obsidian
 Manifest.toml

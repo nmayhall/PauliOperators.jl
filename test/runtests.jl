@@ -11,6 +11,7 @@ using Test
     include("test_stochastic.jl")
     include("test_phase1.jl")
     include("test_truncation.jl")
+    include("test_projectors.jl")
     include("test_sparse_pauli_vector.jl")
     include("test_spv_equivalence.jl")
     include("test_spv_evolution.jl")

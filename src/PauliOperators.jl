@@ -82,6 +82,7 @@ module PauliOperators
     export MajoranaWeightTruncation, WeightDampedTruncation, CompositeTruncation
     export StochasticCoeffTruncation, StochasticSamplingTruncation
     export AdaptiveTruncation
+    export PauliSubspaceProjector, QubitSubspaceProjector
     export NoCorrection, EnergyCorrection, EnergyVarianceCorrection
     export truncate!
 

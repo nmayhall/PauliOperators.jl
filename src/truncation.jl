@@ -141,6 +141,84 @@ end
 AdaptiveTruncation(; max_terms::Int=10000, min_thresh::Float64=1e-12) = AdaptiveTruncation(max_terms, min_thresh)
 
 """
+    PauliSubspaceProjector(keys)
+
+Trace-orthogonal projection onto the span of an explicit set of Pauli strings:
+every term whose `PauliBasis` is not in `keys` is deleted. Construct from any
+iterable of `PauliBasis`, or directly from an operator whose support defines
+the subspace:
+
+```julia
+P = PauliSubspaceProjector(B)              # supp(B) as the subspace
+P = PauliSubspaceProjector(keys(O))
+truncate!(O, P, corr)                      # or pass as evolve!'s `truncation`
+```
+
+Passing this as the `truncation` of a rotation sequence projects after **every
+rotation**, so terms outside the subspace are removed the moment they are
+created — the co-moving light-cone truncation of adjoint-seeded dynamics, and
+the projection step of Markovian projected (subspace) dynamics.
+"""
+struct PauliSubspaceProjector{N,W} <: TruncationStrategy
+    keys::Set{PauliBasis{N,W}}
+end
+PauliSubspaceProjector(ks::AbstractSet{PauliBasis{N,W}}) where {N,W} =
+    PauliSubspaceProjector{N,W}(Set{PauliBasis{N,W}}(ks))
+PauliSubspaceProjector(itr) = PauliSubspaceProjector(Set(itr))
+PauliSubspaceProjector(O::PauliSum{N,W}) where {N,W} = PauliSubspaceProjector(Set(keys(O)))
+PauliSubspaceProjector(v::SparsePauliVector{N,W}) where {N,W} =
+    PauliSubspaceProjector(Set(_unpack(PauliBasis{N}, v.z[i], v.x[i]) for i in 1:v.n))
+
+"""
+    QubitSubspaceProjector(N, kept_qubits; reference = :maxmixed)
+
+State-weighted partial-trace projection onto the Paulis supported on
+`kept_qubits`. Each term `c·P` factors over disjoint supports as
+`P = P_kept · P_env` and is mapped to `(c · ⟨P_env⟩_ref) · P_kept`,
+accumulating onto existing keys — i.e. the conditional expectation
+
+    O  →  tr_env[ O · (I_kept ⊗ ρ_env) ] ⊗ I_env,
+
+which reproduces `⟨O⟩` exactly for any state of the form `ρ_kept ⊗ ρ_env(ref)`.
+
+`reference` fixes the environment product state on the traced-out qubits:
+- `:maxmixed` — `⟨P_env⟩ = 0` for any non-identity `P_env`: pure drop projection.
+- `ψ::Ket`    — computational-basis reference, `⟨P_env⟩ ∈ {0, ±1}`.
+- `bloch::AbstractMatrix` — `3×N` per-qubit Bloch components
+  (rows `⟨X⟩, ⟨Y⟩, ⟨Z⟩`; only columns outside `kept_qubits` are used):
+  a general product-state reference with `⟨P_env⟩ = Πᵢ ⟨σᵢ⟩`.
+"""
+struct QubitSubspaceProjector{N,W} <: TruncationStrategy
+    mask::W                  # kept-qubit bits
+    bloch::Matrix{Float64}   # 3×N per-qubit ⟨X⟩,⟨Y⟩,⟨Z⟩; env columns used
+end
+function QubitSubspaceProjector(N::Integer, kept; reference = :maxmixed)
+    W = word_type(N)
+    mask = zero(W)
+    for q in kept
+        1 <= q <= N || throw(ArgumentError("kept qubit $q out of range 1..$N"))
+        mask |= one(W) << (q - 1)
+    end
+    bloch = zeros(3, N)
+    if reference === :maxmixed
+        # zeros: any env Pauli letter kills the term
+    elseif reference isa Ket
+        reference isa Ket{Int(N)} ||
+            throw(ArgumentError("reference Ket must have $N qubits"))
+        for i in 1:N
+            bloch[3, i] = (reference.v >> (i - 1)) & 1 == 1 ? -1.0 : 1.0
+        end
+    elseif reference isa AbstractMatrix
+        size(reference) == (3, N) ||
+            throw(ArgumentError("bloch reference must be 3×$N (rows ⟨X⟩,⟨Y⟩,⟨Z⟩)"))
+        bloch = Matrix{Float64}(reference)
+    else
+        throw(ArgumentError("reference must be :maxmixed, a Ket, or a 3×N bloch matrix"))
+    end
+    return QubitSubspaceProjector{Int(N), W}(mask, bloch)
+end
+
+"""
     CompositeTruncation(strategies...)
 
 Apply multiple truncation strategies in sequence.
@@ -228,6 +306,50 @@ function _apply!(O::PauliSum{N}, s::AdaptiveTruncation) where N
         end
     else
         coeff_clip!(O, s.min_thresh)
+    end
+    return O
+end
+
+function _apply!(O::PauliSum{N,W,T}, s::PauliSubspaceProjector{N,W}) where {N,W,T}
+    filter!(kv -> kv.first in s.keys, O)
+    return O
+end
+
+# In-place compaction of the live arrays; keys stay sorted, so the SPV
+# invariants are preserved.
+function _apply!(v::SparsePauliVector{N,W,T}, s::PauliSubspaceProjector{N,W}) where {N,W,T}
+    j = 0
+    @inbounds for i in 1:v.n
+        if _unpack(PauliBasis{N}, v.z[i], v.x[i]) in s.keys
+            j += 1
+            v.z[j] = v.z[i]; v.x[j] = v.x[i]; v.c[j] = v.c[i]
+        end
+    end
+    v.n = j
+    return v
+end
+
+function _apply!(O::PauliSum{N,W,T}, s::QubitSubspaceProjector{N,W}) where {N,W,T}
+    env = ~s.mask
+    for p in collect(keys(O))
+        bits = (p.z | p.x) & env
+        bits == zero(W) && continue          # already inside the kept register
+        c = O[p]
+        delete!(O, p)
+        w = 1.0
+        b = bits
+        while b != zero(W)
+            t = trailing_zeros(b)
+            zb = (p.z >> t) & one(W)
+            xb = (p.x >> t) & one(W)
+            row = xb == one(W) ? (zb == one(W) ? 2 : 1) : 3   # X=1, Y=2, Z=3
+            w *= s.bloch[row, t + 1]
+            w == 0.0 && break
+            b &= b - one(W)
+        end
+        w == 0.0 && continue
+        pk = PauliBasis{N,W}(p.z & s.mask, p.x & s.mask)
+        O[pk] = get(O, pk, zero(T)) + T(w) * c
     end
     return O
 end

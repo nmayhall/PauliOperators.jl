@@ -62,9 +62,11 @@ end
     Ket(N::Integer, v::Integer)
 
 Create an `N`-qubit `Ket` from the integer `v` (bits beyond `N` are masked off).
+The storage word is always the canonical `word_type(N)`, regardless of the
+type of `v` — so `Ket(4, 0b0011)` is a `Ket{4,UInt64}`, not `Ket{4,UInt8}`.
 """
-Ket(N::Integer, v::Integer) = Ket{Int(N)}(v)
-Bra(N::Integer, v::Integer) = Bra{Int(N)}(v)
+Ket(N::Integer, v::Integer) = (M = Int(N); W = word_type(M); Ket{M,W}(_to_word(W, M, v)))
+Bra(N::Integer, v::Integer) = (M = Int(N); W = word_type(M); Bra{M,W}(_to_word(W, M, v)))
 
 
 function Base.size(d::Ket{N}) where N

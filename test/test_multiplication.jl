@@ -217,6 +217,29 @@ end
     @test norm(Vector(a/3.4) - Vector(a)/3.4) < 1e-15
 end
 
+@testset "Multiplication PauliSum-KetSum" begin
+    Random.seed!(1)
+
+    N = 4
+    for i in 1:10
+        O = rand(PauliSum{N, PauliOperators.word_type(N), ComplexF64}, n_paulis=10)
+        v = rand(KetSum{N}, n_terms=5)
+
+        σ = O*v
+        @test σ isa KetSum{N, PauliOperators.word_type(N), ComplexF64}
+        @test norm(Matrix(O)*Vector(v) - Vector(σ)) < 1e-14
+
+        # SparsePauliVector goes through the same AnyPauliSum method
+        Os = SparsePauliVector(O)
+        @test norm(Vector(Os*v) - Vector(σ)) < 1e-14
+
+        # matrix_element(KetSum, AnyPauliSum, KetSum) computes ⟨b|O|k⟩ via O*k
+        b = rand(KetSum{N}, n_terms=5)
+        me = matrix_element(b, O, v)
+        @test abs(Vector(b)'*Matrix(O)*Vector(v) - me) < 1e-13
+    end
+end
+
 @testset "inner product" begin
     Random.seed!(1)
   

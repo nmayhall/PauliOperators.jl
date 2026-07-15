@@ -88,6 +88,24 @@ function Base.:*(O::PauliSum{N,W,T}, k::Ket{N}) where {N,W,T}
     return out 
 end
 
+"""
+    Base.:*(O::AnyPauliSum{N}, ks::KetSum{N})
+
+Apply a sum of Paulis to a linear combination of basis states:
+`(Σᵢ cᵢ Pᵢ)(Σₖ vₖ |k⟩)`. Returns a `ComplexF64` `KetSum`.
+"""
+function Base.:*(O::AnyPauliSum{N}, ks::KetSum{N}) where {N}
+    out = KetSum(N, T=ComplexF64)
+    for (p,c) in O
+        for (k,ck) in ks
+            c2,k2 = p*k
+            tmp = get(out, k2, zero(ComplexF64))
+            out[k2] = tmp + c2*c*ck
+        end
+    end
+    return out
+end
+
 function Base.:*(d::DyadSum{N,W,T}, p::PauliSum{N,W,T}) where {N,W,T}
     out = DyadSum(N,T)
     for (dyad, coeff_d) in d

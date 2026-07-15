@@ -240,6 +240,43 @@ end
     end
 end
 
+@testset "Multiplication Y-phase promotion" begin
+    # Regression: real-valued inputs with an odd number of Y's used to throw
+    # InexactError because outputs were built as Float64 KetSums; the ±im
+    # phase must promote the output to complex.
+    N = 2
+    W = PauliOperators.word_type(N)
+
+    # PauliSum{...,Float64} * Ket
+    O = PauliSum(N, Float64)
+    O[PauliBasis("YI")] = 1.0
+    σ = O * Ket(N, 0)
+    @test σ isa KetSum{N, W, ComplexF64}
+    @test σ[Ket(N, 1)] ≈ 1.0im
+
+    # complex-valued PauliSum * Ket hit the same path
+    Oc = PauliSum(N, ComplexF64)
+    Oc[PauliBasis("YI")] = 1.0 + 0im
+    @test (Oc * Ket(N, 0))[Ket(N, 1)] ≈ 1.0im
+
+    # Pauli * Float64 KetSum and PauliBasis * Float64 KetSum
+    ks = KetSum(N)
+    ks[Ket(N, 0)] = 1.0
+    @test (Pauli("YI") * ks)[Ket(N, 1)] ≈ 1.0im
+    @test (PauliBasis("YI") * ks)[Ket(N, 1)] ≈ 1.0im
+
+    # dense cross-check on a Y-rich random operator applied to a Ket
+    Random.seed!(7)
+    Or = PauliSum(N, Float64)
+    while length(Or) < 8
+        Or[PauliBasis{N,W}(rand(W) & 0x3, rand(W) & 0x3)] = randn()
+    end
+    k = Ket(N, 2)
+    σr = Or * k
+    kv = zeros(ComplexF64, 2^N); kv[k.v+1] = 1
+    @test norm(Matrix(Or)*kv - Vector(σr)) < 1e-14
+end
+
 @testset "inner product" begin
     Random.seed!(1)
   

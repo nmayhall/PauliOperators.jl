@@ -56,7 +56,9 @@ end
 Create a dense Matrix of type `T` in the standard basis
 """
 function Base.Matrix(ps::PauliSum{N, W, T}) where {N,W,T}
-    out = zeros(T, Int128(2)^N, Int128(2)^N)
+    # Y-containing basis elements have imaginary matrix entries, so a real
+    # coefficient type still needs a complex output.
+    out = zeros(promote_type(T, ComplexF64), Int128(2)^N, Int128(2)^N)
     for (op, coeff) in ps
         out .+= Matrix(op) .* coeff
     end

@@ -4,3 +4,12 @@
 /docs/build/
 .DS_Store
 Manifest.toml
+
+# Claude Code local state and worktrees
+.claude/
+
+# Generated plots / data from examples (convergence_demo.png is tracked already)
+examples/*.pdf
+examples/*.png
+examples/*.csv
+/*.csv

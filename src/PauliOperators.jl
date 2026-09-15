@@ -26,6 +26,7 @@ module PauliOperators
     include("clip.jl")
     include("truncation.jl")
     include("evolve.jl")
+    include("gradient.jl")
     include("spv_kernels.jl")
     include("spv_evolve.jl")
     include("spv_ops.jl")
@@ -62,6 +63,7 @@ module PauliOperators
     export commute
 
     export evolve, evolve!
+    export expectation_value_gradient
     export weight, coeff_clip!, weight_clip!, weight_damped_clip!
     export x_weight, x_weight_clip!, x_weight_damped_clip!
     export majorana_weight, majorana_weight_clip!

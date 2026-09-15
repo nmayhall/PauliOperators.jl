@@ -265,6 +265,31 @@ gens, angs = cnot_to_paulis(N, control, target)
 
 All gate functions work for both PauliSum (Heisenberg) and KetSum (Schr&ouml;dinger).
 
+## Rotation-Circuit Gradients
+
+Analytic gradients of $C(\vec\theta) = \langle\psi|\, U_M^\dagger \cdots U_1^\dagger\, H\, U_1 \cdots U_M\, |\psi\rangle$ with $U_k = e^{-i\theta_k/2\, G_k}$ (the `evolve` sequence convention), computed with a Krotov-style adjoint sweep — one forward pass of $H$ plus one reverse pass each of $H$ and the state's Pauli coefficients projected onto the evolved Hamiltonian's support — so the **full gradient vector costs ~3x one cost evaluation**, independent of the number of parameters:
+
+```julia
+# Cost only
+E = expectation_value(H, generators, angles, ψ)   # ψ::Ket
+
+# Cost and full analytic gradient  ∂C/∂θ_k
+E, grad = expectation_value_gradient(H, generators, angles, ψ)
+
+# General states: pass ρ as a PauliSum whose values are tr(Pρ)
+E, grad = expectation_value_gradient(H, generators, angles, ρ)
+```
+
+The state is projected onto the circuit's *reachable* Pauli set, which only ever grows — so the gradient is exact at **all** angles, including exact cancellation points ($\theta = 0$, odd multiples of $\pi/2$, symmetry-driven interference) where the coefficient support shrinks.
+
+**Truncation** (the regime real runs operate in): the gradient's forward pass applies `truncation` only to terms that are not already in the sum, so a Pauli, once introduced, is never deleted — monotone growth (and with it the projection's correctness) holds by construction. Each per-step truncation is then a fixed projection, and projections are self-adjoint, so the reverse sweep is the adjoint of the truncated forward map. The returned cost is that of this monotone-truncated evolution (evaluate it independently with `expectation_value(...; truncation, monotone=true)`), and the gradient matches finite differences of that cost to first order in the truncation threshold — exactly, as the threshold → 0.
+
+The reverse evolution of both H and the state is always constrained to the subspace built by the forward pass; the `method` kwarg selects how (same forward map; identical results without truncation; both kept for comparison until one is retired):
+- `method=:dynamic` (default) — the forward pass records when each Pauli first appears, and the reverse sweep projects onto the *per-step* subspace as it goes (the exact adjoint of the truncated forward map), so reverse passes mirror the forward sizes (~3x one cost evaluation).
+- `method=:static` — the reverse evolution is constrained only to the *final* subspace of the forward pass (no per-step record); reverse passes run at full final-subspace size (slower).
+
+See `examples/vqe_demo.jl` for a full VQE simulation (TFIM chain, hardware-efficient ansatz, LBFGS via Optim.jl) driven by `expectation_value_gradient`.
+
 ## Fast Pauli Propagation with SparsePauliVector
 
 `SparsePauliVector` is an alternative storage engine for sums of Paulis, designed for evolution-heavy workloads. It stores the terms as flat, sorted, preallocated parallel arrays instead of a `Dict`: rotations become linear array sweeps, deduplication becomes a sort-merge, and the steady-state hot path allocates zero bytes. It supports the full `PauliSum` API (arithmetic, `evolve!`, `truncate!`, expectation values, clips, analysis utilities), so the typical workflow is: build as a `PauliSum`, convert, evolve, measure.

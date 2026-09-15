@@ -4,7 +4,7 @@
 Heisenberg-picture evolution: O(θ) = exp(iθ/2 G) O exp(-iθ/2 G)
 
 Commuting terms pass through unchanged. Non-commuting terms branch:
-    O(θ) = cos(θ)·O - i·sin(θ)·G·O
+    O(θ) = cos(θ)·O + i·sin(θ)·G·O
 """
 function evolve(O::PauliSum{N, T}, G::PauliBasis{N}, θ::Real) where {N,T}
     _cos = cos(θ)

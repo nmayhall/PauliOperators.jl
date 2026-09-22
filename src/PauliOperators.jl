@@ -24,6 +24,7 @@ module PauliOperators
     include("statistics.jl")
     include("commutator.jl")
     include("clip.jl")
+    include("mean_field.jl")
     include("truncation.jl")
     include("evolve.jl")
     include("spv_kernels.jl")
@@ -79,6 +80,8 @@ module PauliOperators
     export MajoranaWeightTruncation, WeightDampedTruncation, CompositeTruncation
     export StochasticCoeffTruncation, StochasticSamplingTruncation
     export AdaptiveTruncation
+    export MeanFieldTruncation
+    export mean_field_factorize, mean_field_factorize!
     export NoCorrection, EnergyCorrection, EnergyVarianceCorrection
     export truncate!
 

@@ -189,6 +189,10 @@ strat = CompositeTruncation(s1, s2, ...)  # Apply multiple strategies in sequenc
 strat = StochasticCoeffTruncation(ε)      # Randomly round small coefficients
 strat = StochasticSamplingTruncation(k)   # Importance-sample to k terms
 
+# Expectation-preserving (mean-field): folds truncated weight back instead of dropping it,
+# preserving ⟨ψ|O|ψ⟩ exactly (PauliSum only). ψ::Ket is the reference state.
+strat = MeanFieldTruncation(3, ψ)         # Order-3 factorization around ψ; survivors have weight ≤ 3
+
 # Apply truncation (in-place)
 truncate!(O, strat)
 

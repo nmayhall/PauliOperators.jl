@@ -141,6 +141,28 @@ end
 AdaptiveTruncation(; max_terms::Int=10000, min_thresh::Float64=1e-12) = AdaptiveTruncation(max_terms, min_thresh)
 
 """
+    MeanFieldTruncation(max_weight::Int, reference::Ket{N})
+
+Expectation-preserving order-`k` (`k = max_weight`) mean-field truncation around the
+computational-basis `reference`. Every term with Pauli weight > `k` is replaced by its
+order-`k` fluctuation factorization (`δP_j = P_j − ⟨P_j⟩I`), a sum of strings of weight
+≤ `k`. Exact when `k ≥ weight`, and equal to the state-adapted covariance projection π_k
+of arXiv:2609.12840. Preserves `⟨reference|O|reference⟩` for every `k`.
+
+Unlike the drop strategies, this modifies survivors (it folds truncated weight back onto
+lower-order terms), so it is not "pure-drop": `truncate!` routes it through the measured
+before/after correction path rather than the fused delta. Pass the *same* `reference` to
+any `EnergyCorrection`/`EnergyVarianceCorrection` so the energy delta registers as ≈ 0.
+
+Currently supported on `PauliSum` only; on a `SparsePauliVector` it errors (convert to a
+`PauliSum` first).
+"""
+struct MeanFieldTruncation{N} <: TruncationStrategy
+    max_weight::Int
+    reference::Ket{N}
+end
+
+"""
     CompositeTruncation(strategies...)
 
 Apply multiple truncation strategies in sequence.
@@ -230,6 +252,10 @@ function _apply!(O::PauliSum{N}, s::AdaptiveTruncation) where N
         coeff_clip!(O, s.min_thresh)
     end
     return O
+end
+
+function _apply!(O::PauliSum{N}, s::MeanFieldTruncation{N}) where N
+    return mean_field_factorize!(O, s.reference, s.max_weight)
 end
 
 # Recursive tail-pop iteration over the heterogeneous tuple of strategies so

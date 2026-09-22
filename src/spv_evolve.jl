@@ -118,6 +118,12 @@ function _apply!(v::SparsePauliVector, s::CompositeTruncation)
     return v
 end
 
+# MeanFieldTruncation folds truncated weight onto lower-order terms, which does not
+# fit the zero-alloc flat SPV buffer. Supported on PauliSum only for now.
+_apply!(::SparsePauliVector, ::MeanFieldTruncation) =
+    error("MeanFieldTruncation is not yet supported on SparsePauliVector; " *
+          "convert to a PauliSum first.")
+
 # ------------------------------------------------------------
 # Expectation value against computational-basis kets (hot; needed by the
 # correction accumulators — the full observable set lives in spv_ops.jl)

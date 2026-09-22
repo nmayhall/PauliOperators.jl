@@ -154,8 +154,9 @@ lower-order terms), so it is not "pure-drop": `truncate!` routes it through the 
 before/after correction path rather than the fused delta. Pass the *same* `reference` to
 any `EnergyCorrection`/`EnergyVarianceCorrection` so the energy delta registers as ≈ 0.
 
-Currently supported on `PauliSum` only; on a `SparsePauliVector` it errors (convert to a
-`PauliSum` first).
+Supported on both engines. On a `SparsePauliVector` the order-`k` factorization allocates
+(a fold cannot be a zero-alloc in-place compaction), so it runs outside the flat hot path:
+the replacements are staged and merged back in, off the fused zero-allocation route.
 """
 struct MeanFieldTruncation{N} <: TruncationStrategy
     max_weight::Int

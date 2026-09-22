@@ -137,13 +137,55 @@ using Random
         @test corr.accumulated_variance ≈ (var_after - var_before)
     end
 
-    @testset "SparsePauliVector errors (PauliSum-only for now)" begin
+    @testset "SparsePauliVector matches PauliSum" begin
+        N = 8
+        ψ = Ket(N, Int128(0b10101010))
+        Random.seed!(0xF00D)
+        for _ in 1:5
+            O = PauliSum(N, ComplexF64)
+            for _ in 1:12
+                O[rand(PauliBasis{N})] = randn(ComplexF64)
+            end
+            k = 3
+            ev_before = expectation_value(O, ψ)
+
+            Odict = deepcopy(O)
+            truncate!(Odict, MeanFieldTruncation(k, ψ))
+
+            v = SparsePauliVector(O)
+            truncate!(v, MeanFieldTruncation(k, ψ))
+            Ospv = PauliSum(v)
+
+            # Both engines must produce the same operator (robust to explicit
+            # zeros one side may retain after cancellation).
+            for p in union(keys(Odict), keys(Ospv))
+                @test get(Odict, p, 0.0im) ≈ get(Ospv, p, 0.0im) atol = 1e-12
+            end
+            for p in keys(Ospv)
+                @test weight(p) <= k
+            end
+            @test expectation_value(Ospv, ψ) ≈ ev_before
+        end
+    end
+
+    @testset "SparsePauliVector correction parity with PauliSum" begin
         N = 6
         ψ = Ket(N, Int128(0b010110))
         O = PauliSum(N, ComplexF64)
         O[PauliBasis("ZZZZZZ")] = 1.0 + 0im
+        O[PauliBasis("XYZIZI")] = 0.5 + 0im
+        O[PauliBasis("ZIZIZI")] = 0.25 + 0im
+
+        cd = EnergyVarianceCorrection(ψ)
+        truncate!(deepcopy(O), MeanFieldTruncation(2, ψ), cd)
+
         v = SparsePauliVector(O)
-        @test_throws ErrorException truncate!(v, MeanFieldTruncation(2, ψ))
+        cs = EnergyVarianceCorrection(ψ)
+        truncate!(v, MeanFieldTruncation(2, ψ), cs)
+
+        @test cs.accumulated_energy ≈ 0.0 atol = 1e-10
+        @test cs.accumulated_energy ≈ cd.accumulated_energy atol = 1e-10
+        @test cs.accumulated_variance ≈ cd.accumulated_variance
     end
 
 end

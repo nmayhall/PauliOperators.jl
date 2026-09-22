@@ -124,9 +124,11 @@ truncate!(O, strat)                        # ⟨ψ|O|ψ⟩ is preserved; every s
 ```
 
 Because the fold **modifies survivors**, `MeanFieldTruncation` is not "pure-drop": it takes
-the measured before/after correction path rather than the fused delta (see below), and it
-is currently supported on `PauliSum` only — applying it to a `SparsePauliVector` raises an
-error (convert to a `PauliSum` first). The one-term kernel is exposed directly as
+the measured before/after correction path rather than the fused delta (see below). It works
+on both storage engines, but on a `SparsePauliVector` the order-``k`` factorization
+allocates — a fold cannot be a zero-allocation in-place compaction — so it runs as a
+separate boundary pass (stage the replacements, drop the folded terms, merge back) rather
+than on the fused zero-allocation hot path. The one-term kernel is exposed directly as
 [`mean_field_factorize`](@ref) / [`mean_field_factorize!`](@ref).
 
 ## Tracking truncation error: correction accumulators
@@ -189,10 +191,12 @@ One composition limit applies to the fused path: a `CompositeTruncation` may con
 most one `WeightDampedTruncation` and one `XWeightDampedTruncation` (two damped filters
 of the same kind cannot be fused into a single predicate).
 
-`MeanFieldTruncation` is not available on this path: it folds truncated weight back onto
-lower-order terms, which does not fit the flat, sorted buffer. Applying it to a
-`SparsePauliVector` raises an error; use it on the `PauliSum` engine (build as a
-`PauliSum`, truncate, then convert if you need the flat engine downstream).
+`MeanFieldTruncation` is not on the fused path: it folds truncated weight back onto
+lower-order terms, which cannot be expressed as a per-term keep/drop predicate. It still
+runs on a `SparsePauliVector` — as the non-compiled boundary pass (stage the order-``k``
+replacements, drop the folded terms, merge back) — but that pass allocates, unlike the drop
+strategies. Its correction, like every non-compiled strategy's, is measured before/after
+rather than accumulated inside the merge.
 
 ## Extending the system
 

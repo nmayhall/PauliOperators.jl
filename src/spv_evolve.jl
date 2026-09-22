@@ -118,11 +118,25 @@ function _apply!(v::SparsePauliVector, s::CompositeTruncation)
     return v
 end
 
-# MeanFieldTruncation folds truncated weight onto lower-order terms, which does not
-# fit the zero-alloc flat SPV buffer. Supported on PauliSum only for now.
-_apply!(::SparsePauliVector, ::MeanFieldTruncation) =
-    error("MeanFieldTruncation is not yet supported on SparsePauliVector; " *
-          "convert to a PauliSum first.")
+# MeanFieldTruncation folds each weight-> k term into a sum of weight-<= k terms.
+# Unlike the drop strategies this cannot be a pure compaction, so it is not on the
+# fused zero-alloc path: the order-k factorization allocates by definition. We stage
+# the replacements in a PauliSum, drop the folded terms with a plain weight clip, then
+# merge the replacements back with accumulation (sum! dedups against survivors). The
+# factorization is captured before the clip, reading the live buffer in place.
+function _apply!(v::SparsePauliVector{N,W,T}, s::MeanFieldTruncation{N}) where {N,W,T}
+    k = s.max_weight
+    ψ = s.reference
+    folded = PauliSum(N, T)
+    @inbounds for i in 1:v.n
+        count_ones(v.z[i] | v.x[i]) > k || continue          # weight(term) > k
+        pb = _unpack(PauliBasis{N}, v.z[i], v.x[i])
+        sum!(folded, mean_field_factorize(pb, v.c[i], ψ, k))
+    end
+    weight_clip!(v, k)                                        # drop the folded terms
+    isempty(folded) || sum!(v, SparsePauliVector(folded))     # merge replacements back
+    return v
+end
 
 # ------------------------------------------------------------
 # Expectation value against computational-basis kets (hot; needed by the

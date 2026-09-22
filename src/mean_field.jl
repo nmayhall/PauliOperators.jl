@@ -22,35 +22,65 @@ function _partial_alt_binom(n::Int, k_max::Int)
 end
 
 
-"""
-    _foreach_combination(f, n::Int, k::Int)
-
-Invoke `f(buf)` for every size-`k` subset of `{1,…,n}`, where `buf::Vector{Int}`
-is a shared buffer of length `k` holding the indices in increasing order.
-Empty iff `k < 0` or `k > n`.
-"""
-function _foreach_combination(f::F, n::Int, k::Int) where {F}
-    (k < 0 || k > n) && return
-    if k == 0
-        f(Int[])
+# Emit every size-`need` subset of the set bits in `remaining` into `out`, as a
+# Z-string on `y_z_mask | T_mask` with off-diagonal support `x`. Allocation-free:
+# the running subset mask `T_mask` and its ±1 mean product `sgn` are threaded as
+# arguments (no index buffer, no closure), and `coeff_base = c · full_ε · f_t`
+# already folds in the term coefficient, the full mean product, and the
+# level multiplicity, so a leaf only multiplies by `sgn`. Standard bit-combination
+# recursion with a `count_ones` feasibility prune.
+@inline function _mf_emit_subsets!(out::PauliSum{N,T}, remaining::Int128, need::Int,
+                                   y_z_mask::Int128, x::Int128, coeff_base::T,
+                                   ψv::Int128, T_mask::Int128, sgn::Int) where {N,T}
+    if need == 0
+        key = PauliBasis{N}(y_z_mask | T_mask, x)
+        out[key] = get(out, key, zero(T)) + coeff_base * sgn
         return
     end
-    buf = Vector{Int}(undef, k)
-    _rec_combo!(f, buf, 1, 1, n, k)
+    bits = remaining
+    while bits != zero(Int128)
+        lb = bits & (-bits)          # lowest set bit
+        bits ⊻= lb                    # drop it from this level's future choices
+        count_ones(bits) >= need - 1 || break   # not enough bits left to finish
+        q  = trailing_zeros(lb)       # 0-based qubit position
+        εq = 1 - 2 * Int((ψv >> q) & 1)
+        _mf_emit_subsets!(out, bits, need - 1, y_z_mask, x, coeff_base,
+                          ψv, T_mask | lb, sgn * εq)
+    end
     return
 end
 
-function _rec_combo!(f::F, buf::Vector{Int}, depth::Int, start::Int,
-                     n::Int, k::Int) where {F}
-    if depth > k
-        f(buf)
-        return
+
+"""
+    _mean_field_accumulate!(out::PauliSum{N,T}, pb::PauliBasis{N}, c, ψ::Ket{N}, k::Int)
+
+Accumulate the order-`k` mean-field factorization of `c · pb` around `ψ` into `out`
+(adding to existing coefficients on key collision). The allocation-free core of
+[`mean_field_factorize`](@ref) — see it for the math.
+"""
+function _mean_field_accumulate!(out::PauliSum{N,T}, pb::PauliBasis{N},
+                                 c::T, ψ::Ket{N}, k::Int) where {N,T}
+    n_xy = count_ones(pb.x)
+    n_xy > k && return out                      # off-diagonal support alone exceeds budget
+
+    z_only   = pb.z & ~pb.x                      # pure-Z qubits (the only fluctuating means)
+    n_z      = count_ones(z_only)
+    y_z_mask = pb.z & pb.x                       # Z-bits on Y qubits, carried unchanged
+    budget   = k - n_xy                          # max |T|
+    ψv       = ψ.v
+
+    # full_ε = ∏_j ⟨ψ|Z_j|ψ⟩ over the pure-Z qubits = (-1)^popcount(z_only & ψ)
+    full_ε = 1 - 2 * (count_ones(z_only & ψv) & 1)
+    cε = c * full_ε
+
+    # One level per retained-subset size t; skip whole levels whose multiplicity
+    # vanishes (this collapses the k ≥ weight case to the single original term).
+    for t in 0:min(budget, n_z)
+        f = _partial_alt_binom(n_z - t, budget - t)
+        f == 0 && continue
+        _mf_emit_subsets!(out, z_only, t, y_z_mask, pb.x, cε * f, ψv, Int128(0), 1)
     end
-    for i in start:(n - k + depth)
-        buf[depth] = i
-        _rec_combo!(f, buf, depth + 1, i + 1, n, k)
-    end
-    return
+    return out
 end
 
 
@@ -67,49 +97,9 @@ reference only pure-Z qubits contribute non-trivially, so enumeration is over
 subsets of the pure-Z qubit positions in `pb`.
 """
 function mean_field_factorize(pb::PauliBasis{N}, c::T, ψ::Ket{N}, k::Int) where {N,T}
-    result = PauliSum(N, T)
-
-    n_xy = count_ones(pb.x)
-    if n_xy > k
-        return result
-    end
-
-    z_only = pb.z & ~pb.x
-    z_pos  = get_on_bits(z_only)
-    n_z    = length(z_pos)
-
-    ε = Vector{Int}(undef, n_z)
-    full_ε = 1
-    for (i, q) in enumerate(z_pos)
-        εi = ((ψ.v >> (q - 1)) & 1 == 1) ? -1 : 1
-        ε[i]   = εi
-        full_ε *= εi
-    end
-
-    y_z_mask = pb.z & pb.x   # Z-bits carried by Y qubits (unchanged by factorization)
-    budget   = k - n_xy      # max |T|
-
-    for t in 0:min(budget, n_z)
-        f = _partial_alt_binom(n_z - t, budget - t)
-        f == 0 && continue
-        _foreach_combination(n_z, t) do T_idx
-            T_mask = Int128(0)
-            ε_rest = full_ε
-            for i in T_idx
-                T_mask |= Int128(1) << (z_pos[i] - 1)
-                ε_rest *= ε[i]
-            end
-            pb_new  = PauliBasis{N}(y_z_mask | T_mask, pb.x)
-            contrib = c * ε_rest * f
-            if haskey(result, pb_new)
-                result[pb_new] += contrib
-            else
-                result[pb_new] = contrib
-            end
-        end
-    end
-
-    return result
+    out = PauliSum(N, T)
+    _mean_field_accumulate!(out, pb, c, ψ, k)
+    return out
 end
 
 
@@ -122,8 +112,8 @@ mean-field factorization around `ψ`. See [`mean_field_factorize`](@ref).
 function mean_field_factorize!(O::PauliSum{N,T}, ψ::Ket{N}, k::Int) where {N,T}
     high = [pb for (pb, _) in O if weight(pb) > k]
     for pb in high
-        c = pop!(O, pb)
-        sum!(O, mean_field_factorize(pb, c, ψ, k))
+        c = pop!(O, pb)                          # remove the high-weight term
+        _mean_field_accumulate!(O, pb, c, ψ, k)  # fold its replacements straight back in
     end
     return O
 end

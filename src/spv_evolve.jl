@@ -131,7 +131,7 @@ function _apply!(v::SparsePauliVector{N,W,T}, s::MeanFieldTruncation{N}) where {
     @inbounds for i in 1:v.n
         count_ones(v.z[i] | v.x[i]) > k || continue          # weight(term) > k
         pb = _unpack(PauliBasis{N}, v.z[i], v.x[i])
-        sum!(folded, mean_field_factorize(pb, v.c[i], ψ, k))
+        _mean_field_accumulate!(folded, pb, v.c[i], ψ, k)     # fold straight into folded
     end
     weight_clip!(v, k)                                        # drop the folded terms
     isempty(folded) || sum!(v, SparsePauliVector(folded))     # merge replacements back

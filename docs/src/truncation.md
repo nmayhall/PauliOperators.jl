@@ -125,11 +125,14 @@ truncate!(O, strat)                        # ⟨ψ|O|ψ⟩ is preserved; every s
 
 Because the fold **modifies survivors**, `MeanFieldTruncation` is not "pure-drop": it takes
 the measured before/after correction path rather than the fused delta (see below). It works
-on both storage engines, but on a `SparsePauliVector` the order-``k`` factorization
-allocates — a fold cannot be a zero-allocation in-place compaction — so it runs as a
-separate boundary pass (stage the replacements, drop the folded terms, merge back) rather
-than on the fused zero-allocation hot path. The one-term kernel is exposed directly as
-[`mean_field_factorize`](@ref) / [`mean_field_factorize!`](@ref).
+on both storage engines. On a `SparsePauliVector` it runs as a separate boundary pass —
+sweep the buffer, stage each order-``k`` replacement into the flat append region, drop the
+folded terms, then sort-merge the appends back in (no `Dict`). The append/workspace buffers
+are reused across window boundaries, so in an evolution loop the pass amortizes to
+essentially zero allocation after its first growth; the growth itself is bounded by the
+pre-merge fold expansion, which can transiently exceed the operator size. The one-term
+kernel is exposed directly as [`mean_field_factorize`](@ref) /
+[`mean_field_factorize!`](@ref).
 
 ## Tracking truncation error: correction accumulators
 
@@ -194,9 +197,10 @@ of the same kind cannot be fused into a single predicate).
 `MeanFieldTruncation` is not on the fused path: it folds truncated weight back onto
 lower-order terms, which cannot be expressed as a per-term keep/drop predicate. It still
 runs on a `SparsePauliVector` — as the non-compiled boundary pass (stage the order-``k``
-replacements, drop the folded terms, merge back) — but that pass allocates, unlike the drop
-strategies. Its correction, like every non-compiled strategy's, is measured before/after
-rather than accumulated inside the merge.
+replacements into the append region, drop the folded terms, sort-merge back). That pass
+reuses the flat buffers, so it amortizes to near-zero allocation across a loop, but it
+carries a larger transient buffer than the drop strategies and its correction, like every
+non-compiled strategy's, is measured before/after rather than accumulated inside the merge.
 
 ## Extending the system
 

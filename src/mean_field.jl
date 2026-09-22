@@ -22,19 +22,29 @@ function _partial_alt_binom(n::Int, k_max::Int)
 end
 
 
-# Emit every size-`need` subset of the set bits in `remaining` into `out`, as a
+# Emit sinks for the factorization kernel. `_mf_emit!(sink, z, x, c)` receives one
+# output term (Z/X packed as Int128 bitstrings, coefficient `c`). Two sinks:
+#   - PauliSum: accumulate onto the key (get/set +=).
+#   - SparsePauliVector: stage the raw triple into the append region (defined in
+#     spv_evolve.jl); the later sort-merge dedups, so no Dict is needed at all.
+@inline function _mf_emit!(out::PauliSum{N,T}, z::Int128, x::Int128, c::T) where {N,T}
+    key = PauliBasis{N}(z, x)
+    out[key] = get(out, key, zero(T)) + c
+    return nothing
+end
+
+# Emit every size-`need` subset of the set bits in `remaining` into `sink`, as a
 # Z-string on `y_z_mask | T_mask` with off-diagonal support `x`. Allocation-free:
 # the running subset mask `T_mask` and its ±1 mean product `sgn` are threaded as
 # arguments (no index buffer, no closure), and `coeff_base = c · full_ε · f_t`
 # already folds in the term coefficient, the full mean product, and the
 # level multiplicity, so a leaf only multiplies by `sgn`. Standard bit-combination
 # recursion with a `count_ones` feasibility prune.
-@inline function _mf_emit_subsets!(out::PauliSum{N,T}, remaining::Int128, need::Int,
+@inline function _mf_emit_subsets!(sink, remaining::Int128, need::Int,
                                    y_z_mask::Int128, x::Int128, coeff_base::T,
-                                   ψv::Int128, T_mask::Int128, sgn::Int) where {N,T}
+                                   ψv::Int128, T_mask::Int128, sgn::Int) where {T}
     if need == 0
-        key = PauliBasis{N}(y_z_mask | T_mask, x)
-        out[key] = get(out, key, zero(T)) + coeff_base * sgn
+        _mf_emit!(sink, y_z_mask | T_mask, x, coeff_base * sgn)
         return
     end
     bits = remaining
@@ -44,7 +54,7 @@ end
         count_ones(bits) >= need - 1 || break   # not enough bits left to finish
         q  = trailing_zeros(lb)       # 0-based qubit position
         εq = 1 - 2 * Int((ψv >> q) & 1)
-        _mf_emit_subsets!(out, bits, need - 1, y_z_mask, x, coeff_base,
+        _mf_emit_subsets!(sink, bits, need - 1, y_z_mask, x, coeff_base,
                           ψv, T_mask | lb, sgn * εq)
     end
     return
@@ -52,16 +62,17 @@ end
 
 
 """
-    _mean_field_accumulate!(out::PauliSum{N,T}, pb::PauliBasis{N}, c, ψ::Ket{N}, k::Int)
+    _mean_field_accumulate!(sink, pb::PauliBasis{N}, c, ψ::Ket{N}, k::Int)
 
-Accumulate the order-`k` mean-field factorization of `c · pb` around `ψ` into `out`
-(adding to existing coefficients on key collision). The allocation-free core of
-[`mean_field_factorize`](@ref) — see it for the math.
+Emit the order-`k` mean-field factorization of `c · pb` around `ψ` into `sink`
+(a `PauliSum` or a `SparsePauliVector`; see `_mf_emit!`). The allocation-free core
+of [`mean_field_factorize`](@ref) — see it for the math. `c`'s type must match the
+sink's coefficient type.
 """
-function _mean_field_accumulate!(out::PauliSum{N,T}, pb::PauliBasis{N},
+function _mean_field_accumulate!(sink, pb::PauliBasis{N},
                                  c::T, ψ::Ket{N}, k::Int) where {N,T}
     n_xy = count_ones(pb.x)
-    n_xy > k && return out                      # off-diagonal support alone exceeds budget
+    n_xy > k && return sink                     # off-diagonal support alone exceeds budget
 
     z_only   = pb.z & ~pb.x                      # pure-Z qubits (the only fluctuating means)
     n_z      = count_ones(z_only)
@@ -78,9 +89,9 @@ function _mean_field_accumulate!(out::PauliSum{N,T}, pb::PauliBasis{N},
     for t in 0:min(budget, n_z)
         f = _partial_alt_binom(n_z - t, budget - t)
         f == 0 && continue
-        _mf_emit_subsets!(out, z_only, t, y_z_mask, pb.x, cε * f, ψv, Int128(0), 1)
+        _mf_emit_subsets!(sink, z_only, t, y_z_mask, pb.x, cε * f, ψv, Int128(0), 1)
     end
-    return out
+    return sink
 end
 
 

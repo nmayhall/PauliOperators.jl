@@ -154,9 +154,10 @@ lower-order terms), so it is not "pure-drop": `truncate!` routes it through the 
 before/after correction path rather than the fused delta. Pass the *same* `reference` to
 any `EnergyCorrection`/`EnergyVarianceCorrection` so the energy delta registers as ≈ 0.
 
-Supported on both engines. On a `SparsePauliVector` the order-`k` factorization allocates
-(a fold cannot be a zero-alloc in-place compaction), so it runs outside the flat hot path:
-the replacements are staged and merged back in, off the fused zero-allocation route.
+Supported on both engines. On a `SparsePauliVector` it runs as the non-compiled boundary
+pass — stage each order-`k` replacement into the flat append region, drop the folded terms,
+sort-merge back (no `Dict`). Reusing the flat buffers, it amortizes to near-zero allocation
+across an evolution loop, at the cost of a larger transient buffer than the drop strategies.
 """
 struct MeanFieldTruncation{N} <: TruncationStrategy
     max_weight::Int

@@ -30,6 +30,7 @@ module PauliOperators
     include("spv_kernels.jl")
     include("spv_evolve.jl")
     include("spv_ops.jl")
+    include("majorana_mean_field.jl")
     include("decompose.jl")
     include("gates.jl")
     include("analysis.jl")
@@ -82,6 +83,8 @@ module PauliOperators
     export AdaptiveTruncation
     export MeanFieldTruncation
     export mean_field_factorize, mean_field_factorize!
+    export MajoranaMeanFieldTruncation
+    export majorana_mean_field_factorize, majorana_mean_field_factorize!
     export NoCorrection, EnergyCorrection, EnergyVarianceCorrection
     export truncate!
 

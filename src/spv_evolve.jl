@@ -118,6 +118,40 @@ function _apply!(v::SparsePauliVector, s::CompositeTruncation)
     return v
 end
 
+# Append-region sink for the mean-field kernel: stage one factorization output term
+# straight into the SPV's pending-append buffer (no Dict). The subsequent
+# gather/sort/merge dedups and accumulates colliding keys.
+@inline function _mf_emit!(v::SparsePauliVector{N,W,T}, z::Int128, x::Int128, c::T) where {N,W,T}
+    v.an == length(v.az) && _grow_append!(v, v.an + 1)
+    j = v.an + 1
+    @inbounds v.az[j] = (z % UInt128) % W
+    @inbounds v.ax[j] = (x % UInt128) % W
+    @inbounds v.ac[j] = c
+    v.an = j
+    return nothing
+end
+
+# MeanFieldTruncation folds each weight-> k term into a sum of weight-<= k terms.
+# Unlike the drop strategies this cannot be a pure compaction, so it is not on the
+# fused zero-alloc path: the order-k factorization allocates by definition. Stage the
+# replacement terms straight into the append region (Dict-free), drop the folded terms
+# with a plain weight clip, then run the standard merge to fold the appends back in
+# with dedup+accumulation. Staging reads the live buffer and writes only the append
+# arrays, so it is safe to do before the clip.
+function _apply!(v::SparsePauliVector{N,W,T}, s::MeanFieldTruncation{N}) where {N,W,T}
+    k = s.max_weight
+    ψ = s.reference
+    @inbounds for i in 1:v.n
+        count_ones(v.z[i] | v.x[i]) > k || continue          # weight(term) > k
+        pb = _unpack(PauliBasis{N}, v.z[i], v.x[i])
+        _mean_field_accumulate!(v, pb, v.c[i], ψ, k)          # stage folds into v.a*
+    end
+    v.an == 0 && return v                                     # nothing folded
+    weight_clip!(v, k)                                        # drop the folded terms
+    merge_pending!(v)                                         # sort+merge appends into live
+    return v
+end
+
 # ------------------------------------------------------------
 # Expectation value against computational-basis kets (hot; needed by the
 # correction accumulators — the full observable set lives in spv_ops.jl)

@@ -85,6 +85,55 @@ variance to remove that bias.
 
 Both accept an `rng` for reproducibility.
 
+## Expectation-preserving (mean-field) truncation
+
+Every strategy above *discards* the terms it selects. `MeanFieldTruncation(k, ψ)` instead
+**folds** the truncated weight back onto lower-order terms, so that the expectation value
+in a computational-basis reference state ``\psi`` is preserved *exactly* at the truncation
+instant.
+
+It works from the mean-field (fluctuation) decomposition of each single-qubit factor
+around ``\psi``:
+
+```math
+P_j = m_j\, I + \delta P_j, \qquad m_j = \langle\psi|P_j|\psi\rangle .
+```
+
+Expanding a Pauli string over this split and keeping only the terms with at most ``k``
+fluctuation factors ``\delta P_j`` maps every string of weight ``> k`` to a sum of strings
+of weight ``\le k``. The map is:
+
+- **exact** when ``k \ge \mathrm{weight}(P)`` (nothing to fold);
+- **expectation-preserving** for every ``k``: ``\langle\psi|O|\psi\rangle`` is unchanged;
+- equal, on the ``k``-by-weight diagonal, to the state-adapted covariance projection
+  ``\pi_k`` of [arXiv:2609.12840](https://arxiv.org/abs/2609.12840).
+
+On a computational-basis reference only pure-`Z` qubits carry a nonzero mean
+(``m_j = \pm 1``); `X`/`Y` factors have ``m_j = 0`` and are pure fluctuation. Two
+consequences worth knowing:
+
+- The order-0 case `MeanFieldTruncation(0, ψ)` collapses each selected term to
+  ``c\,\langle\psi|P|\psi\rangle\, I`` — its mean-field contribution to the identity.
+- A term whose off-diagonal support already exceeds the budget
+  (``\mathrm{x\_weight}(P) > k``) folds to **nothing** — its lowest fluctuation order is
+  already ``> k``. This is a real, occasionally surprising, zero.
+
+```julia
+strat = MeanFieldTruncation(3, ψ)          # ψ::Ket — the reference state
+truncate!(O, strat)                        # ⟨ψ|O|ψ⟩ is preserved; every surviving term has weight ≤ 3
+```
+
+Because the fold **modifies survivors**, `MeanFieldTruncation` is not "pure-drop": it takes
+the measured before/after correction path rather than the fused delta (see below). It works
+on both storage engines. On a `SparsePauliVector` it runs as a separate boundary pass —
+sweep the buffer, stage each order-``k`` replacement into the flat append region, drop the
+folded terms, then sort-merge the appends back in (no `Dict`). The append/workspace buffers
+are reused across window boundaries, so in an evolution loop the pass amortizes to
+essentially zero allocation after its first growth; the growth itself is bounded by the
+pre-merge fold expansion, which can transiently exceed the operator size. The one-term
+kernel is exposed directly as [`mean_field_factorize`](@ref) /
+[`mean_field_factorize!`](@ref).
+
 ## Tracking truncation error: correction accumulators
 
 `truncate!` optionally takes a [`CorrectionAccumulator`](@ref) that measures an
@@ -107,6 +156,13 @@ downstream effect of evolving without the discarded terms (the dropped terms wou
 kept splitting and interfering). It is a first-order running correction, not an exact
 error bar — in practice it substantially tightens energy estimates in truncated
 propagation.
+
+With `MeanFieldTruncation` (using the same ``\psi`` for the strategy and the accumulator),
+`accumulated_energy` stays ``\approx 0`` by construction — the fold preserves
+``\langle\psi|O|\psi\rangle`` — while `accumulated_variance` still records the variance the
+truncation removed. Since the fold is not pure-drop, it is measured wholesale before and
+after (the fused single-pass delta path is reserved for the drop strategies), so this works
+without any change to the accumulators.
 
 ## Direct clip functions
 
@@ -137,6 +193,14 @@ On a `SparsePauliVector`, `evolve!` distinguishes two truncation roles
 One composition limit applies to the fused path: a `CompositeTruncation` may contain at
 most one `WeightDampedTruncation` and one `XWeightDampedTruncation` (two damped filters
 of the same kind cannot be fused into a single predicate).
+
+`MeanFieldTruncation` is not on the fused path: it folds truncated weight back onto
+lower-order terms, which cannot be expressed as a per-term keep/drop predicate. It still
+runs on a `SparsePauliVector` — as the non-compiled boundary pass (stage the order-``k``
+replacements into the append region, drop the folded terms, sort-merge back). That pass
+reuses the flat buffers, so it amortizes to near-zero allocation across a loop, but it
+carries a larger transient buffer than the drop strategies and its correction, like every
+non-compiled strategy's, is measured before/after rather than accumulated inside the merge.
 
 ## Extending the system
 

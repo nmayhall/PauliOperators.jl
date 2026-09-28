@@ -15,19 +15,23 @@
 #  On a determinant the only nonzero Wick contraction is the within-mode pair
 #    ⟨γ_{2f-1} γ_{2f}⟩_ψ = i(1 - 2 n_f),
 #  and because same-mode Majoranas have consecutive (adjacent) indices, every
-#  contraction sign is +1 — so the fold is: expand ∏_modes (mean + fluctuation)
-#  and keep terms with ≤ k Majoranas. Verified against brute force.
+#  contraction sign is +1.
+#
+#  ANALYTIC KERNEL.  Split the modes of a Pauli string into
+#    - "single" modes carrying exactly one Majorana (γ_{2f-1} XOR γ_{2f}), and
+#    - "pair"   modes carrying both (γ_{2f-1} γ_{2f} = i Z_f).
+#  The pair factors are DIAGONAL and mutually COMMUTING (each is i Z_f), so the
+#  order-k fold factorizes exactly:
+#      fold(c·pb) = γ_Q · [ order-(budget) spin fold of the pair-mode Z-string ],
+#  where γ_Q is the fixed product of the single-mode Majoranas and
+#  budget = ⌊(k − #singles)/2⌋ (each kept pair costs 2 Majoranas). The global JW
+#  phase i^{#pairs} that relates ∏γ to the Pauli basis cancels EXACTLY against the
+#  1/coeff normalization, leaving purely the real spin-fold coefficients. So the
+#  whole thing reduces to bit-ops plus one call to the allocation-free spin kernel
+#  (`_mean_field_accumulate!`, mean_field.jl) on the pair-mode Z-string, with each
+#  emitted Z-subset re-based onto γ_Q's (z,x). Verified term-by-term against the
+#  brute-force Wick expansion and against the earlier multiply-based reference.
 # =============================================================================
-
-# γ_{idx} as a Pauli{N} (built by multiplication so the JW phase is exact).
-function _mmf_gamma(idx::Int, N::Int)
-    f = (idx + 1) ÷ 2
-    g = isodd(idx) ? Pauli(N, X=[f]) : Pauli(N, Y=[f])
-    for q in 1:f-1
-        g = Pauli(N, Z=[q]) * g
-    end
-    return g
-end
 
 # strict-above suffix parity of the x-bits (t_g = XOR_{f>g} x_f)
 @inline function _mmf_tmask(x::Int128)
@@ -45,51 +49,39 @@ end
     return a, b
 end
 
-_mmf_ident(N::Int) = (o = PauliSum(N, ComplexF64);
-                      o[PauliBasis{N}(Int128(0), Int128(0))] = 1.0 + 0im; o)
-
-# Add the operator for one choice of kept (uncontracted) pair-modes into `result`.
-# Built in ascending mode order so all JW signs/phases come from Pauli `*`.
-function _mmf_add_term!(result::PauliSum{N,ComplexF64}, cc::ComplexF64, ψ::Ket{N},
-                        a::Int128, b::Int128, pairs::Vector{Int},
-                        kept::Vector{Bool}) where {N}
-    op = _mmf_ident(N)
-    op[PauliBasis{N}(Int128(0), Int128(0))] = cc
-    @inbounds for f in 1:N
-        af = (a >> (f-1)) & 1
-        bf = (b >> (f-1)) & 1
-        if (af ⊻ bf) == 1                      # single Majorana
-            op = op * _mmf_gamma(af == 1 ? 2*f-1 : 2*f, N)
-        elseif af == 1 && bf == 1              # pair mode
-            pidx = findfirst(==(f), pairs)::Int
-            mean = im * (1 - 2 * Int((ψ.v >> (f-1)) & 1))
-            if kept[pidx]                       # keep fluctuation (γγ − mean)
-                gg = PauliSum(_mmf_gamma(2*f-1, N) * _mmf_gamma(2*f, N))
-                op = op * (gg - mean * _mmf_ident(N))
-            else                                # contract to the mean
-                op = op * mean
-            end
-        end
-    end
-    sum!(result, op)
+# Sink wrapper: re-base each spin-fold output (a Z-string on the pair modes) onto
+# the fixed single-mode Majorana product γ_Q by XORing its (z,x) offsets. The pair
+# modes and single modes are disjoint, and Z_T commutes with γ_Q with no phase, so
+# this XOR is the exact product γ_Q · Z_T (see the header). Forwards to the real
+# target sink (`PauliSum` or `SparsePauliVector`), so it inherits their `_mf_emit!`.
+struct _MMFSink{S}
+    target::S
+    z_off::Int128     # γ_Q z-bits (pb.z with the pair-mode Z removed)
+    x_off::Int128     # γ_Q x-bits (= pb.x; single modes only)
+end
+@inline function _mf_emit!(s::_MMFSink, z::Int128, x::Int128, c)
+    _mf_emit!(s.target, z ⊻ s.z_off, x ⊻ s.x_off, c)
     return nothing
 end
 
-# enumerate size-t subsets of 1:n, invoking f(kept::Vector{Bool}) for each
-function _mmf_foreach_kept(f::F, n::Int, t::Int) where {F}
-    kept = fill(false, n)          # Vector{Bool} (not BitVector)
-    _mmf_kept_rec(f, kept, 1, t, n)
-end
-function _mmf_kept_rec(f::F, kept::Vector{Bool}, start::Int, remaining::Int, n::Int) where {F}
-    if remaining == 0
-        f(kept); return
-    end
-    for i in start:(n - remaining + 1)
-        kept[i] = true
-        _mmf_kept_rec(f, kept, i+1, remaining-1, n)
-        kept[i] = false
-    end
-    return
+# Emit the order-`k` Majorana mean-field factorization of `c · pb` around `ψ` into
+# `sink` (a `PauliSum` or `SparsePauliVector`). Allocation-free core: no Pauli
+# multiplication, no γ construction — just bit-ops plus one spin-fold pass over the
+# pair-mode Z-string, re-based onto γ_Q by `_MMFSink`.
+function _majorana_mean_field_accumulate!(sink, pb::PauliBasis{N},
+                                          c::T, ψ::Ket{N}, k::Int) where {N,T}
+    a, b   = _mmf_ab(pb.z, pb.x)
+    P_mask = a & b                       # pair modes: both Majoranas present (= i Z_f)
+    Q      = count_ones(a ⊻ b)           # single modes: exactly one Majorana each
+    Q > k && return sink                 # #singles alone exceeds the Majorana budget
+    budget = (k - Q) ÷ 2                 # each kept pair costs 2 Majoranas
+    z_Q    = pb.z ⊻ P_mask               # γ_Q z-bits: pb.z with pair-mode Z removed
+    Z_P    = PauliBasis{N}(P_mask, Int128(0))
+    wrapped = _MMFSink(sink, z_Q, pb.x)
+    # Spin-fold the pair-mode Z-string to weight ≤ budget around ψ; the wrapper
+    # re-bases each Z-subset onto γ_Q and carries c through unchanged.
+    _mean_field_accumulate!(wrapped, Z_P, c, ψ, budget)
+    return sink
 end
 
 """
@@ -100,26 +92,9 @@ computational-basis determinant `ψ`. Replaces `pb` with a sum of Pauli strings
 of Majorana weight ≤ `k`, preserving `⟨ψ|·|ψ⟩` and exact when `k ≥ majorana_weight(pb)`.
 """
 function majorana_mean_field_factorize(pb::PauliBasis{N}, c, ψ::Ket{N}, k::Int) where {N}
-    result = PauliSum(N, ComplexF64)
-    a, b = _mmf_ab(pb.z, pb.x)
-    pairs = Int[f for f in 1:N if (((a>>(f-1))&1)==1) && (((b>>(f-1))&1)==1)]
-    Q = count(f -> ((((a>>(f-1))&1)) ⊻ (((b>>(f-1))&1))) == 1, 1:N)   # #singles
-    Q > k && return result                        # off-diagonal support exceeds budget
-    # JW phase relating the ascending Majorana product to pb
-    pfull = Pauli(N)
-    @inbounds for f in 1:N
-        ((a>>(f-1))&1)==1 && (pfull = pfull * _mmf_gamma(2*f-1, N))
-        ((b>>(f-1))&1)==1 && (pfull = pfull * _mmf_gamma(2*f, N))
-    end
-    cc = ComplexF64(c) / coeff(pfull)
-    budget_pairs = (k - Q) ÷ 2                     # each kept pair costs 2 Majoranas
-    np = length(pairs)
-    for t in 0:min(budget_pairs, np)
-        _mmf_foreach_kept(np, t) do kept
-            _mmf_add_term!(result, cc, ψ, a, b, pairs, kept)
-        end
-    end
-    return result
+    out = PauliSum(N, ComplexF64)
+    _majorana_mean_field_accumulate!(out, pb, ComplexF64(c), ψ, k)
+    return out
 end
 
 """
@@ -132,10 +107,7 @@ function majorana_mean_field_factorize!(O::PauliSum{N,T}, ψ::Ket{N}, k::Int) wh
     high = [pb for (pb, _) in O if majorana_weight(pb) > k]
     for pb in high
         c = pop!(O, pb)
-        fold = majorana_mean_field_factorize(pb, c, ψ, k)
-        for (p2, c2) in fold
-            O[p2] = get(O, p2, zero(T)) + convert(T, c2)
-        end
+        _majorana_mean_field_accumulate!(O, pb, c, ψ, k)
     end
     return O
 end
@@ -163,17 +135,21 @@ function _apply!(O::PauliSum{N}, s::MajoranaMeanFieldTruncation{N}) where {N}
     return majorana_mean_field_factorize!(O, s.reference, s.max_weight)
 end
 
-# SparsePauliVector path: fold high-Majorana-weight terms into a PauliSum,
-# drop them from the flat buffer (Majorana-weight clip), merge the replacements
-# back. (Uses a Dict internally; a zero-alloc staging variant is a follow-up.)
+# SparsePauliVector path: stage each high-Majorana-weight term's fold straight into
+# the flat append region (Dict-free, via the append-region `_mf_emit!` sink), drop
+# the folded originals with a Majorana-weight clip, then sort-merge the appends back
+# in with dedup+accumulation — mirroring the `MeanFieldTruncation` SPV pass. Staging
+# reads the live buffer and writes only the append arrays, so it is safe before the clip.
 function _apply!(v::SparsePauliVector{N,W,T}, s::MajoranaMeanFieldTruncation{N}) where {N,W,T}
-    folded = PauliSum(N, ComplexF64)
+    k = s.max_weight
+    ψ = s.reference
     @inbounds for i in 1:v.n
         pb = _unpack(PauliBasis{N}, v.z[i], v.x[i])
-        majorana_weight(pb) > s.max_weight || continue
-        sum!(folded, majorana_mean_field_factorize(pb, v.c[i], s.reference, s.max_weight))
+        majorana_weight(pb) > k || continue
+        _majorana_mean_field_accumulate!(v, pb, v.c[i], ψ, k)     # stage folds into v.a*
     end
-    majorana_weight_clip!(v, s.max_weight)
-    isempty(folded) || sum!(v, SparsePauliVector(folded; T=T))
+    v.an == 0 && return v                                         # nothing folded
+    majorana_weight_clip!(v, k)                                   # drop the folded terms
+    merge_pending!(v)                                             # sort+merge appends into live
     return v
 end

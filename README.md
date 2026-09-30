@@ -192,6 +192,7 @@ strat = StochasticSamplingTruncation(k)   # Importance-sample to k terms
 # Expectation-preserving (mean-field): folds truncated weight back instead of dropping it,
 # preserving ⟨ψ|O|ψ⟩ exactly. ψ::Ket is the reference state.
 strat = MeanFieldTruncation(3, ψ)         # Order-3 factorization around ψ; survivors have weight ≤ 3
+strat = MajoranaMeanFieldTruncation(4, ψ) # Fermionic (Wick) analog; survivors have Majorana weight ≤ 4
 
 # Apply truncation (in-place)
 truncate!(O, strat)
@@ -201,6 +202,25 @@ corr = EnergyCorrection(ψ)
 truncate!(O, strat, corr)
 println(corr.accumulated_energy)
 ```
+
+### Fermionic (Majorana) mean-field truncation
+
+`MajoranaMeanFieldTruncation(k, ψ)` is the fermionic counterpart of `MeanFieldTruncation`. It truncates by **Majorana weight** (the Jordan–Wigner-aware fermionic locality measure) instead of Pauli weight, and folds each term with Majorana weight > `k` back onto terms of Majorana weight ≤ `k` via Wick's theorem around a Slater-determinant reference `ψ`. Like the spin fold, it preserves `⟨ψ|O|ψ⟩` for every `k` and is exact when `k ≥ majorana_weight`.
+
+- **Reference**: `ψ` must be a computational-basis `Ket` (a determinant in the JW occupation basis, `γ_{2f-1} = X_f Z_{<f}`, `γ_{2f} = Y_f Z_{<f}`, matching `jordan_wigner`). By particle–hole symmetry `|0…0⟩` is itself HF, so transform your orbitals/occupations so the determinant sits at a basis state.
+- **Fast kernel**: on a determinant, the only nonzero contraction is the within-mode pair `⟨γ_{2f-1}γ_{2f}⟩ = i(1 − 2n_f)`. A term therefore splits into its single-Majorana modes (kept as-is) and its paired modes (a commuting `Z`-string), and the fold reduces to bit operations plus one allocation-free spin mean-field pass over that `Z`-string.
+- **Engines**: works on both `PauliSum` and `SparsePauliVector` (Dict-free on the flat engine).
+
+```julia
+ψ = Ket([1, 1, 0, 0, 1, 1, 0, 0])            # reference determinant
+truncate!(O, MajoranaMeanFieldTruncation(4, ψ), EnergyCorrection(ψ))  # energy delta ≈ 0
+
+# The kernel is also exposed directly
+F = majorana_mean_field_factorize(pb, c, ψ, 4)  # order-4 fold of c·pb → PauliSum
+majorana_mean_field_factorize!(O, ψ, 4)         # fold every term of O with Majorana weight > 4
+```
+
+Both mean-field strategies modify surviving terms, so `truncate!` routes them through the measured before/after correction path. Pass the same reference to any `EnergyCorrection`/`EnergyVarianceCorrection` so the energy change registers as ≈ 0.
 
 > The exact semantics of each strategy, the weight measures they are built on, and how to define custom strategies are documented in [Truncation](https://nmayhall.github.io/PauliOperators.jl/dev/truncation/) in the docs.
 
